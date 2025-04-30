@@ -228,18 +228,20 @@ def delete_conversation(student_email):
             conn.close()
 
 
-# --- LLM Interaction (Swedish) ---
+# (Keep imports and other functions as they were)
+
+# --- LLM Interaction (Swedish - REVISED PROMPT) ---
 def get_llm_response_with_history(student_email, history, problem_info):
-    """Gets LLM response considering history and precise evaluation task."""
+    """Gets LLM response considering history and precise evaluation task, using clearer marker logic."""
     if not OLLAMA_MODEL:
         logging.error("OLLAMA_MODEL miljövariabel ej satt.")
         return "Nej men kära nån, nu tappade jag tråden helt...", False # Swedish fallback
 
-    # Last message is the student's latest reply
     latest_student_message = history[-1]['content'] if history and history[-1]['role'] == 'user' else "[INGET SENASTE MEDDELANDE]"
 
     logging.info(f"Hämtar LLM-svar för {student_email} (modell: {OLLAMA_MODEL})")
 
+    # --- REVISED PROMPT SECTIONS ---
     system_prompt_combined = f"""{BRITTA_PERSONA_PROMPT}
 
 Ditt nuvarande specifika tekniska problem är: {problem_info['beskrivning']}
@@ -252,40 +254,68 @@ Du ska utvärdera studentens senaste e-postmeddelande baserat på konversationsh
 ---
 {latest_student_message}
 ---
-Utvärdera nu studentens meddelande noggrant. Föreslår meddelandet den specifika korrekta lösningen relaterad till '{problem_info['losning_nyckelord']}'?
-Analysera mot de exakta nyckelorden/koncepten. Att föreslå något annat, även om det är en generell IT-åtgärd, är INTE korrekt för just detta problem.
+**Utvärdering:** Har studenten i detta senaste meddelande föreslagit den specifika korrekta lösningen relaterad till '{problem_info['losning_nyckelord']}'? (Analysera mot *exakta* nyckelord/koncept. Generella IT-råd är fel.)
 
-Om JA, studenten löste det: Svara som Britta, bekräfta att rådet fungerade, uttryck tacksamhet, kanske nämn Måns eller fikat, och avsluta artigt supportsamtalet. VIKTIGT: Börja ditt svar *endast* med den exakta frasen "LÖST: ".
-Om NEJ, studenten har inte löst det än: Svara som Britta, håll dig till karaktären. Svara naturligt på deras meddelande. Du kanske är förvirrad över deras förslag, nämner att du provat något liknande (om det stämmer), eller försiktigt styr tillbaka genom att beskriva ett symptom vagt. Avslöja INTE det korrekta svaret. Börja INTE ditt svar med "LÖST: ".
+**Instruktion för ditt svar:**
+1.  Skriv *först*, på en helt egen rad och utan någon annan text på den raden, antingen `[LÖST]` (om studentens senaste meddelande innehöll den korrekta specifika lösningen) eller `[EJ_LÖST]` (om det inte gjorde det).
+2.  Börja sedan på en *ny rad* och skriv ditt svar *som Britta*.
+    *   Om du skrev `[LÖST]` på första raden, ska Brittas svar bekräfta att rådet fungerade, tacka och avsluta artigt.
+    *   Om du skrev `[EJ_LÖST]` på första raden, ska Brittas svar vara i karaktär, *inte* avslöja lösningen, och kanske vara lite förvirrat eller beskriva symptomen igen.
+
+**Exempel på format (om lösningen var FELAKTIG):**
+[EJ_LÖST]
+Nej men kära du, jag provade det där men det blev ingen skillnad alls. Internetlådan lyser fortfarande envist orange...
+
+**Exempel på format (om lösningen var KORREKT):**
+[LÖST]
+Åh, tusen tack snälla rara! Nu fungerar det perfekt igen. Det var precis som du sa! Nu ska jag och Måns ta en kopp kaffe och läsa tidningen på plattan.
+
+**VIKTIGT:** Brittas svar (allt efter första radens markör) ska *aldrig* nämna utvärderingen, markörerna `[LÖST]` / `[EJ_LÖST]`, eller ge ledtrådar utöver vad Britta naturligt skulle säga.
 """
+    # --- END OF REVISED PROMPT SECTIONS ---
 
     messages = [{'role': 'system', 'content': system_prompt_combined}]
-    # Include history *before* the evaluation prompt
-    # We pass the history up to the *previous* turn to the LLM context,
-    # and include the latest student message within the evaluation prompt.
-    messages.extend(history[:-1]) # Exclude the last student message from context history
-    messages.append({'role': 'user', 'content': evaluation_prompt})
+    # Pass history *before* the evaluation prompt
+    messages.extend(history[:-1]) # History up to the turn *before* the latest student message
+    messages.append({'role': 'user', 'content': evaluation_prompt}) # Evaluation prompt contains latest msg
 
     try:
         logging.debug(f"Skickar meddelanden till Ollama för {student_email}: {messages}")
         response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=messages,
-            options={'temperature': 0.7},
+            options={'temperature': 0.7, 'num_predict': 300}, # Adjust num_predict if needed
             **ollama_client_args
         )
         raw_reply = response['message']['content'].strip()
         logging.debug(f"Rått svar från Ollama för {student_email}: {raw_reply}")
 
-        is_solved = raw_reply.startswith("LÖST:")
-        britta_reply = raw_reply.removeprefix("LÖST:").strip()
+        # --- REVISED PARSING LOGIC ---
+        lines = raw_reply.split('\n', 1) # Split into max 2 parts: first line and the rest
+        marker = lines[0].strip()
+        is_solved = (marker == "[LÖST]")
+        is_unsolved_marker = (marker == "[EJ_LÖST]")
 
+        if len(lines) > 1:
+            britta_reply = lines[1].strip()
+            # Extra safety: remove markers if they somehow leak into Britta's part
+            britta_reply = britta_reply.replace("[LÖST]", "").replace("[EJ_LÖST]", "").strip()
+        elif is_solved: # Handle case where only [LÖST] is returned
+            britta_reply = "Åh, tack snälla du, nu fungerar det visst!"
+            logging.warning(f"LLM returnerade bara LÖST-markör för {student_email}. Använder reservsvar.")
+        else: # Handle case where only [EJ_LÖST] or unexpected marker/text is returned
+            britta_reply = "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
+            logging.warning(f"LLM returnerade bara EJ_LÖST-markör eller oväntat/kort svar för {student_email}. Använder reservsvar.")
+            is_solved = False # Ensure is_solved is False if marker wasn't exactly [LÖST]
+
+        # Final check for empty reply after processing
         if not britta_reply:
              britta_reply = "Åh, tack snälla du, nu fungerar det visst!" if is_solved else "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
-             logging.warning(f"LLM-svar var tomt efter borttagning av markör för {student_email}. Använder reservsvar.")
+             logging.warning(f"Britta's svar var tomt efter bearbetning för {student_email}. Använder reservsvar.")
 
-        logging.info(f"LLM genererade svar för {student_email}. Löst: {is_solved}")
+        logging.info(f"LLM genererade svar för {student_email}. Marker: {marker}. Tolkat som löst: {is_solved}")
         return britta_reply, is_solved
+        # --- END OF REVISED PARSING LOGIC ---
 
     except ollama.ResponseError as e:
          logging.error(f"Ollama API-fel för {student_email}: {e.error} (Status: {e.status_code})", exc_info=True)
