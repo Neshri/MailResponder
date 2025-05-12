@@ -29,8 +29,8 @@ logging.info("Läste in miljövariabler från .env-fil.")
 # Email Config
 EMAIL_ADDRESS = os.environ.get('BOT_EMAIL_ADDRESS')
 EMAIL_PASSWORD = os.environ.get('BOT_EMAIL_PASSWORD')
-IMAP_SERVER = os.environ.get('IMAP_SERVER', 'imap.gmail.com')
-SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
+IMAP_SERVER = os.environ.get('IMAP_SERVER', 'outlook.office365.com')
+SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.office365.com')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
 # Ollama Config
 OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL')
@@ -43,13 +43,13 @@ if OLLAMA_HOST:
     logging.info(f"Ollama-klient konfigurerad för värd: {OLLAMA_HOST}")
 
 # --- Constants ---
-DB_FILE = 'britta_conversations.db'
-RUN_EMAIL_BOT = False # <-- SET TO False TO RUN COMMAND-LINE TEST MODE
+DB_FILE = 'ulla_conversations.db'
+RUN_EMAIL_BOT = True # <-- SET TO False TO RUN COMMAND-LINE TEST MODE
 START_COMMAND_SUBJECT = "starta övning" # Subject to initiate training (case-insensitive)
 
 # --- Persona Prompt (Swedish) ---
-BRITTA_PERSONA_PROMPT = """
-Du är Britta, en vänlig men tekniskt ovan äldre dam i 85-årsåldern.
+ULLA_PERSONA_PROMPT = """
+Du är Ulla, en vänlig men tekniskt ovan äldre dam i 85-årsåldern.
 Du interagerar med en IT-supportstudent via e-post eftersom något inte fungerar med dina "apparater".
 Du använder ofta felaktiga termer (t.ex. "klickern" för musen, "internetlådan" för routern, "fönsterskärmen" för bildskärmen).
 Du beskriver saker vagt baserat på vad du ser eller hör.
@@ -57,7 +57,7 @@ Du kan ibland spåra ur lite och prata om din katt Måns, dina barnbarn eller va
 Du uttrycker mild frustration, förvirring eller att du känner dig överväldigad, men är alltid artig och tacksam för hjälp.
 Du svarar på det senaste e-postmeddelandet i konversationstråden som tillhandahålls.
 Analysera studentens meddelande i kontexten av konversationshistoriken och ditt nuvarande problem.
-Formulera ett svar *som Britta*. Agera INTE som en AI-assistent. Svara bara som Britta skulle göra.
+Formulera ett svar *som Ulla*. Agera INTE som en AI-assistent. Svara bara som Ulla skulle göra.
 Håll dina svar relativt korta och konverserande, som ett riktigt e-postmeddelande. Använd inte emojis.
 """
 
@@ -125,7 +125,7 @@ def start_new_conversation(student_email, problem):
         cursor = conn.cursor()
         timestamp = datetime.datetime.now()
 
-        # Initial history contains only Britta's first prompt
+        # Initial history contains only Ulla's first prompt
         initial_history = [{'role': 'assistant', 'content': problem['start_prompt']}]
         history_json = json.dumps(initial_history)
 
@@ -242,7 +242,7 @@ def get_llm_response_with_history(student_email, history, problem_info):
     logging.info(f"Hämtar LLM-svar för {student_email} (modell: {OLLAMA_MODEL})")
 
     # --- REVISED PROMPT SECTIONS ---
-    system_prompt_combined = f"""{BRITTA_PERSONA_PROMPT}
+    system_prompt_combined = f"""{ULLA_PERSONA_PROMPT}
 
 Ditt nuvarande specifika tekniska problem är: {problem_info['beskrivning']}
 Den korrekta tekniska lösningen innefattar specifikt dessa idéer/nyckelord: {problem_info['losning_nyckelord']}
@@ -258,9 +258,9 @@ Du ska utvärdera studentens senaste e-postmeddelande baserat på konversationsh
 
 **Instruktion för ditt svar:**
 1.  Skriv *först*, på en helt egen rad och utan någon annan text på den raden, antingen `[LÖST]` (om studentens senaste meddelande innehöll den korrekta specifika lösningen) eller `[EJ_LÖST]` (om det inte gjorde det).
-2.  Börja sedan på en *ny rad* och skriv ditt svar *som Britta*.
-    *   Om du skrev `[LÖST]` på första raden, ska Brittas svar bekräfta att rådet fungerade, tacka och avsluta artigt.
-    *   Om du skrev `[EJ_LÖST]` på första raden, ska Brittas svar vara i karaktär, *inte* avslöja lösningen, och kanske vara lite förvirrat eller beskriva symptomen igen.
+2.  Börja sedan på en *ny rad* och skriv ditt svar *som Ulla*.
+    *   Om du skrev `[LÖST]` på första raden, ska Ullas svar bekräfta att rådet fungerade, tacka och avsluta artigt.
+    *   Om du skrev `[EJ_LÖST]` på första raden, ska Ullas svar vara i karaktär, *inte* avslöja lösningen, och kanske vara lite förvirrat eller beskriva symptomen igen.
 
 **Exempel på format (om lösningen var FELAKTIG):**
 [EJ_LÖST]
@@ -270,7 +270,7 @@ Nej men kära du, jag provade det där men det blev ingen skillnad alls. Interne
 [LÖST]
 Åh, tusen tack snälla rara! Nu fungerar det perfekt igen. Det var precis som du sa! Nu ska jag och Måns ta en kopp kaffe och läsa tidningen på plattan.
 
-**VIKTIGT:** Brittas svar (allt efter första radens markör) ska *aldrig* nämna utvärderingen, markörerna `[LÖST]` / `[EJ_LÖST]`, eller ge ledtrådar utöver vad Britta naturligt skulle säga.
+**VIKTIGT:** Ullas svar (allt efter första radens markör) ska *aldrig* nämna utvärderingen, markörerna `[LÖST]` / `[EJ_LÖST]`, eller ge ledtrådar utöver vad Ulla naturligt skulle säga.
 """
     # --- END OF REVISED PROMPT SECTIONS ---
 
@@ -297,24 +297,24 @@ Nej men kära du, jag provade det där men det blev ingen skillnad alls. Interne
         is_unsolved_marker = (marker == "[EJ_LÖST]")
 
         if len(lines) > 1:
-            britta_reply = lines[1].strip()
-            # Extra safety: remove markers if they somehow leak into Britta's part
-            britta_reply = britta_reply.replace("[LÖST]", "").replace("[EJ_LÖST]", "").strip()
+            Ulla_reply = lines[1].strip()
+            # Extra safety: remove markers if they somehow leak into Ulla's part
+            Ulla_reply = Ulla_reply.replace("[LÖST]", "").replace("[EJ_LÖST]", "").strip()
         elif is_solved: # Handle case where only [LÖST] is returned
-            britta_reply = "Åh, tack snälla du, nu fungerar det visst!"
+            Ulla_reply = "Åh, tack snälla du, nu fungerar det visst!"
             logging.warning(f"LLM returnerade bara LÖST-markör för {student_email}. Använder reservsvar.")
         else: # Handle case where only [EJ_LÖST] or unexpected marker/text is returned
-            britta_reply = "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
+            Ulla_reply = "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
             logging.warning(f"LLM returnerade bara EJ_LÖST-markör eller oväntat/kort svar för {student_email}. Använder reservsvar.")
             is_solved = False # Ensure is_solved is False if marker wasn't exactly [LÖST]
 
         # Final check for empty reply after processing
-        if not britta_reply:
-             britta_reply = "Åh, tack snälla du, nu fungerar det visst!" if is_solved else "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
-             logging.warning(f"Britta's svar var tomt efter bearbetning för {student_email}. Använder reservsvar.")
+        if not Ulla_reply:
+             Ulla_reply = "Åh, tack snälla du, nu fungerar det visst!" if is_solved else "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
+             logging.warning(f"Ulla's svar var tomt efter bearbetning för {student_email}. Använder reservsvar.")
 
         logging.info(f"LLM genererade svar för {student_email}. Marker: {marker}. Tolkat som löst: {is_solved}")
-        return britta_reply, is_solved
+        return Ulla_reply, is_solved
         # --- END OF REVISED PARSING LOGIC ---
 
     except ollama.ResponseError as e:
@@ -384,7 +384,7 @@ def send_email(recipient, subject, body, incoming_message_id=None, references_he
     msg['From'] = EMAIL_ADDRESS
     msg['To'] = recipient
 
-    domain_part = EMAIL_ADDRESS.split('@')[-1] if EMAIL_ADDRESS and '@' in EMAIL_ADDRESS else 'britta.bot'
+    domain_part = EMAIL_ADDRESS.split('@')[-1] if EMAIL_ADDRESS and '@' in EMAIL_ADDRESS else 'Ulla.bot'
     new_message_id = email.utils.make_msgid(domain=domain_part)
     msg['Message-ID'] = new_message_id
 
@@ -411,7 +411,7 @@ def send_email(recipient, subject, body, incoming_message_id=None, references_he
             logging.info("E-post skickat framgångsrikt.")
             return new_message_id
     except smtplib.SMTPAuthenticationError as e:
-        logging.error(f"SMTP Authentiseringsfel: {e}. Kontrollera e-post/lösenord (App-lösenord för Gmail!) i .env.")
+        logging.error(f"SMTP Authentiseringsfel: {e}. Kontrollera e-post/lösenord (App-lösenord för outlook!) i .env.")
         return None
     except Exception as e:
         logging.error(f"Oväntat fel vid skickande av e-post: {e}", exc_info=True)
@@ -493,9 +493,9 @@ def check_emails():
 
                     # 3. Send reply (if LLM succeeded)
                     if reply_body:
-                        britta_message_id = send_email(sender_email, subject, reply_body, incoming_message_id, references)
-                        if britta_message_id:
-                            # 4. Append Britta's reply to history
+                        Ulla_message_id = send_email(sender_email, subject, reply_body, incoming_message_id, references)
+                        if Ulla_message_id:
+                            # 4. Append Ulla's reply to history
                             history.append({'role': 'assistant', 'content': reply_body})
                             # 5. Update DB or Delete if solved
                             if is_solved:
@@ -518,11 +518,11 @@ def check_emails():
                         # 1. Select problem & Start conversation in DB
                         problem = random.choice(PROBLEM_KATALOG)
                         if start_new_conversation(sender_email, problem):
-                            # 2. Send Britta's initial problem description
+                            # 2. Send Ulla's initial problem description
                             initial_reply_body = problem['start_prompt']
                             # Note: First email has no incoming_message_id or references
-                            britta_message_id = send_email(sender_email, subject, initial_reply_body, None, None)
-                            if britta_message_id:
+                            Ulla_message_id = send_email(sender_email, subject, initial_reply_body, None, None)
+                            if Ulla_message_id:
                                 logging.info(f"Skickade initial problembeskrivning till {sender_email}")
                                 # 3. Mark student's start command as seen
                                 mail.store(email_id_bytes, '+FLAGS', '\\Seen')
@@ -609,9 +609,9 @@ if __name__ == "__main__":
             'losning_nyckelord': problem['losning_nyckelord']
         }
         print(f"\n--- Startar Testscenario ---")
-        print(f"Brittas Problem: {test_problem_info['beskrivning']}")
+        print(f"Ullas Problem: {test_problem_info['beskrivning']}")
         print(f"(Lösningsledtråd: {test_problem_info['losning_nyckelord']})")
-        print(f"Brittas Startmeddelande:\n{problem['start_prompt']}\n")
+        print(f"Ullas Startmeddelande:\n{problem['start_prompt']}\n")
         test_history.append({'role': 'assistant', 'content': problem['start_prompt']})
 
         while True:
@@ -623,13 +623,13 @@ if __name__ == "__main__":
                 # Add student message to history
                 test_history.append({'role': 'user', 'content': user_input})
 
-                britta_response, is_solved = get_llm_response_with_history(test_student_email, test_history, test_problem_info)
+                Ulla_response, is_solved = get_llm_response_with_history(test_student_email, test_history, test_problem_info)
 
-                print("\n--- Brittas Svar ---")
-                print(britta_response)
+                print("\n--- Ullas Svar ---")
+                print(Ulla_response)
                 print("--------------------\n")
 
-                test_history.append({'role': 'assistant', 'content': britta_response})
+                test_history.append({'role': 'assistant', 'content': Ulla_response})
 
                 if is_solved:
                     print("--- Scenario LÖST! Startar nytt scenario. ---")
@@ -637,9 +637,9 @@ if __name__ == "__main__":
                     problem = random.choice(PROBLEM_KATALOG)
                     test_problem_info = { 'id': problem['id'], 'beskrivning': problem['beskrivning'], 'losning_nyckelord': problem['losning_nyckelord'] }
                     print(f"\n--- Startar Testscenario ---")
-                    print(f"Brittas Problem: {test_problem_info['beskrivning']}")
+                    print(f"Ullas Problem: {test_problem_info['beskrivning']}")
                     print(f"(Lösningsledtråd: {test_problem_info['losning_nyckelord']})")
-                    print(f"Brittas Startmeddelande:\n{problem['start_prompt']}\n")
+                    print(f"Ullas Startmeddelande:\n{problem['start_prompt']}\n")
                     test_history.append({'role': 'assistant', 'content': problem['start_prompt']})
 
             except KeyboardInterrupt: print("\nAvslutar testläge."); break
