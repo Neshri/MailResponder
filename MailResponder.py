@@ -236,7 +236,7 @@ Du ska utvärdera studentens SENASTE meddelande (som är det sista "Support:"-me
         response = ollama.chat(
             model=OLLAMA_MODEL,
             messages=messages_for_ollama,
-            options={'temperature': 0.7, 'num_predict': 300}, # Adjust num_predict if needed
+            options={'temperature': 0.7, 'num_predict': 1000}, # Adjust num_predict if needed
             **ollama_client_args
         )
         raw_reply_from_llm = response['message']['content'] # Get the raw string
