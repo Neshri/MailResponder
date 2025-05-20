@@ -265,11 +265,23 @@ def get_graph_token():
         ACCESS_TOKEN = None
         return None
 
+      
 def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers_extra=None):
     """Makes a generic Graph API call and handles token refresh."""
-    if not ACCESS_TOKEN or jwt_is_expired(ACCESS_TOKEN): # Simple check, MSAL handles refresh better
-        if not get_graph_token():
+    global ACCESS_TOKEN # <--- ADD THIS LINE to indicate modification of the global
+    
+    # Initial check and token acquisition
+    # This logic should be robust: if token is None or expired, get a new one.
+    if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
+        logging.info("ACCESS_TOKEN is None or expired, attempting to get/refresh.")
+        if not get_graph_token(): # get_graph_token will update the global ACCESS_TOKEN
+            logging.error("Failed to get/refresh token in make_graph_api_call. Cannot proceed.")
             return None # Could not get token
+
+    # Now ACCESS_TOKEN should be valid if get_graph_token() succeeded
+    if ACCESS_TOKEN is None: # Double check in case get_graph_token failed silently (it shouldn't)
+        logging.error("ACCESS_TOKEN is still None after get_graph_token attempt.")
+        return None
 
     headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}
     if headers_extra:
@@ -279,16 +291,16 @@ def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers
     try:
         logging.debug(f"Graph API-anrop: {method} {url} | Params: {params} | Data: {json.dumps(data)[:200] if data else 'None'}")
         response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
-        response.raise_for_status() # Raises HTTPError for 4xx/5xx
+        response.raise_for_status() 
 
-        if response.status_code == 204 or response.status_code == 202: # No Content or Accepted
-            return True # Indicate success without a JSON body
+        if response.status_code == 204 or response.status_code == 202: 
+            return True 
         return response.json()
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401: # Unauthorized - token might have expired
-            logging.warning("Graph API returnerade 401, försöker förnya token...")
-            ACCESS_TOKEN = None # Force token refresh on next call
-            # Potentially retry once here, or let the main loop handle it
+        if e.response.status_code == 401: 
+            logging.warning("Graph API returnerade 401 (Unauthorized). Invalidating local token to force refresh on next attempt.")
+            ACCESS_TOKEN = None # Invalidate the global token so get_graph_token is called next time
+                                # This makes this function aware it's modifying the global
         error_details = "Okänd felstruktur."
         try: error_details = e.response.json().get("error", {}).get("message", e.response.text)
         except json.JSONDecodeError: error_details = e.response.text
@@ -297,6 +309,8 @@ def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers
     except requests.exceptions.RequestException as e:
         logging.error(f"Graph API anropsfel: {e} för {method} {url}", exc_info=True)
         return None
+
+    
 
 def jwt_is_expired(token_str):
     """Rudimentary check if JWT is expired. MSAL handles this better."""
