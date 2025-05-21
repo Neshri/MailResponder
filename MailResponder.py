@@ -136,6 +136,7 @@ def get_active_conversation(student_email):
     finally:
         if conn: conn.close()
 
+
 def update_conversation_history(student_email, new_entry_string, graph_conversation_id_to_set=None):
     conn = None
     try:
@@ -172,6 +173,7 @@ def update_conversation_history(student_email, new_entry_string, graph_conversat
         return False
     finally:
         if conn: conn.close()
+
 
 def delete_conversation(student_email): # Unchanged
     # ... (same as your existing delete_conversation) ...
@@ -335,6 +337,7 @@ def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers
     except requests.exceptions.RequestException as e:
         logging.error(f"Graph API anropsfel: {e} för {method} {url}", exc_info=True); return None
 
+
 # --- Graph API Email Functions ---
 def graph_send_email(recipient_email, subject, body_content, 
                      in_reply_to_message_id=None, # This is the InternetMessageID of the email being replied to
@@ -384,6 +387,7 @@ def graph_send_email(recipient_email, subject, body_content,
         logging.error(f"Misslyckades skicka e-post via Graph API. Svar från API: {response}")
         return False
 
+
 def clean_email_body(body_text, original_sender_email_for_attribution=None): # Your existing improved clean_email_body
     # ... (same as your existing clean_email_body) ...
     if not body_text: return ""
@@ -412,8 +416,10 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None): # Y
     if not final_text and body_text.strip(): return "" 
     return final_text
 
+
 def graph_check_emails():
     global ACCESS_TOKEN
+    # For Graph API, select fields that provide necessary information
     select_fields = "id,subject,from,sender,toRecipients,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
@@ -436,41 +442,74 @@ def graph_check_emails():
         graph_message_id = msg_graph.get('id')
         logging.info(f"--- Bearbetar Graph e-post ID: {graph_message_id} ---")
         try:
-            subject = msg_graph.get('subject', "") 
+            subject_from_email = msg_graph.get('subject', "") # Default to empty string
             sender_info = msg_graph.get('from') or msg_graph.get('sender')
             sender_email = sender_info.get('emailAddress', {}).get('address', '').lower() if sender_info else ''
             internet_message_id = msg_graph.get('internetMessageId')
             graph_conversation_id_incoming = msg_graph.get('conversationId')
             references_header_value = next((h.get('value') for h in msg_graph.get('internetMessageHeaders', []) if h.get('name', '').lower() == 'references'), None)
             
-            logging.info(f"Från: {sender_email} | Ämne: '{subject}' | Graph ID: {graph_message_id}")
+            logging.info(f"Från: {sender_email} | Ämne: '{subject_from_email}' | Graph ID: {graph_message_id}")
 
             if not sender_email or sender_email == TARGET_USER_GRAPH_ID.lower() or 'mailer-daemon' in sender_email or 'noreply' in sender_email:
                 logging.warning(f"Skippar e-post (själv, studs, no-reply). Markerar som läst.")
                 mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id); continue
 
-            # --- MODIFIED LOGIC FLOW ---
+            # Extract and clean body FIRST, as it's needed for start command check too
+            email_body_graph_obj = msg_graph.get('body', {})
+            email_body_content = email_body_graph_obj.get('content', '')
+            raw_body_for_cleaning = ""
+            if email_body_graph_obj.get('contentType', '').lower() == 'html':
+                soup = BeautifulSoup(email_body_content, "html.parser")
+                raw_body_for_cleaning = soup.get_text(separator='\n').strip()
+            else: # Plain text
+                raw_body_for_cleaning = email_body_content
+            
+            # Use the original cleaned body for start command check in body
+            # This `email_body_cleaned_raw` is before further stripping for LLM.
+            email_body_cleaned_raw = clean_email_body(raw_body_for_cleaning, TARGET_USER_GRAPH_ID) 
+            logging.debug(f"Rå-rensad e-posttext för ID {graph_message_id} (för startkommando-check): '{email_body_cleaned_raw[:150]}...'")
+
+
+            # --- MODIFIED LOGIC FOR START COMMAND AND CONVERSATION HANDLING ---
             history_string, problem_info, existing_graph_convo_id_db = get_active_conversation(sender_email)
+            
+            is_start_command = False
+            if history_string and problem_info: # Active conversation exists
+                # Check if the BODY of this email starts with the command to override/restart
+                if email_body_cleaned_raw.lower().strip().startswith(START_COMMAND_SUBJECT):
+                    is_start_command = True
+                    logging.info(f"Startkommando hittat i E-POSTTEXT från {sender_email} för aktiv konversation. Startar om övning.")
+            else: # No active conversation
+                # Check both subject AND body for the start command
+                if (subject_from_email and START_COMMAND_SUBJECT in subject_from_email.lower()) or \
+                   (email_body_cleaned_raw.lower().strip().startswith(START_COMMAND_SUBJECT)):
+                    is_start_command = True
+                    logging.info(f"Startkommando hittat från {sender_email} (ingen aktiv konversation). Startar ny övning.")
 
-            if history_string and problem_info:
-                # ACTIVE CONVERSATION EXISTS: Process as a reply to the current problem.
-                # "starta övning" in subject is IGNORED here if a conversation is active.
-                logging.info(f"E-post {graph_message_id} tillhör aktiv konversation för {sender_email}")
-
-                email_body_graph_obj = msg_graph.get('body', {})
-                email_body_content = email_body_graph_obj.get('content', '')
-                raw_body_for_cleaning = ""
-                if email_body_graph_obj.get('contentType', '').lower() == 'html':
-                    soup = BeautifulSoup(email_body_content, "html.parser")
-                    raw_body_for_cleaning = soup.get_text(separator='\n').strip()
-                else: raw_body_for_cleaning = email_body_content
+            if is_start_command:
+                problem = random.choice(PROBLEM_KATALOG)
+                if start_new_conversation(sender_email, problem, graph_conversation_id_incoming):
+                    initial_reply_body = problem['start_prompt']
+                    # Use the incoming email's subject if it was the trigger, or a generic one if body was trigger
+                    reply_subject_for_ulla_start = subject_from_email if START_COMMAND_SUBJECT in subject_from_email.lower() else "Ny övning påbörjad"
+                    
+                    if graph_send_email(sender_email, reply_subject_for_ulla_start, initial_reply_body, conversation_id=graph_conversation_id_incoming):
+                        logging.info(f"Skickade initial problembeskrivning till {sender_email}")
+                        mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
+                    else:
+                        logging.error(f"Misslyckades skicka initialt problem. Startkommando INTE markerat som läst.")
+                        delete_conversation(sender_email) # Rollback if Ulla's first mail fails
+                else:
+                    logging.error(f"Misslyckades skapa/ersätta ny konversation i DB. Startkommando INTE markerat som läst.")
+            
+            elif history_string and problem_info: # Active conversation exists AND it's NOT a body-based restart command
+                logging.info(f"E-post {graph_message_id} tillhör aktiv konversation för {sender_email} (ej omstart).")
                 
-                email_body_final = clean_email_body(raw_body_for_cleaning, TARGET_USER_GRAPH_ID)
-                logging.debug(f"Rensad e-posttext för ID {graph_message_id}: '{email_body_final[:100]}...'")
-
-                email_body_final_for_llm = email_body_final
-                if not email_body_final.strip():
-                    logging.warning(f"E-posttext tom efter rensning för ID {graph_message_id}. Använder bodyPreview.")
+                # email_body_final_for_llm should be the cleaned message content
+                email_body_final_for_llm = email_body_cleaned_raw # Use the already cleaned body
+                if not email_body_final_for_llm.strip(): # Check if it's empty after cleaning
+                    logging.warning(f"E-posttext tom efter rensning för ID {graph_message_id} (i aktiv konv.). Använder bodyPreview.")
                     email_body_final_for_llm = (msg_graph.get('bodyPreview') or "").strip()
                     if not email_body_final_for_llm:
                         logging.warning(f"BodyPreview också tom för ID {graph_message_id}. Skippar svar. Markerar som läst.")
@@ -487,12 +526,9 @@ def graph_check_emails():
                     current_convo_id_for_reply = graph_conversation_id_incoming or existing_graph_convo_id_db
                     new_references_for_reply = f"{references_header_value if references_header_value else ''} {internet_message_id}".strip()
                     
-                    # Determine subject for Ulla's reply. It should be "Re: <Subject of Ulla's PREVIOUS email in this thread>"
-                    # This is tricky without knowing Ulla's last subject easily.
-                    # Simplest: use "Re: <Student's current subject>"
-                    reply_subject_for_ulla = subject
+                    reply_subject_for_ulla = subject_from_email # Use the student's current subject
                     if not reply_subject_for_ulla.lower().startswith("re:"):
-                        reply_subject_for_ulla = f"Re: {subject}"
+                        reply_subject_for_ulla = f"Re: {subject_from_email}"
 
                     if graph_send_email(sender_email, reply_subject_for_ulla, reply_body, 
                                         in_reply_to_message_id=internet_message_id, 
@@ -504,39 +540,19 @@ def graph_check_emails():
                         logging.info(f"Bearbetat och svarat på Graph e-post {graph_message_id} för {sender_email}.")
                     else: logging.error(f"Misslyckades skicka svar. E-post INTE markerad som läst.")
                 else: logging.error(f"Misslyckades få LLM-svar. E-post INTE markerad som läst.")
-
-            else: # NO ACTIVE CONVERSATION for this sender
-                is_start_command = subject and START_COMMAND_SUBJECT in subject.lower()
-                if is_start_command:
-                    logging.info(f"Mottog startkommando från {sender_email} (Ämne: '{subject}'). Startar ny övning.")
-                    # Body of start command email is not used by LLM directly for this step.
-                    problem = random.choice(PROBLEM_KATALOG)
-                    if start_new_conversation(sender_email, problem, graph_conversation_id_incoming):
-                        initial_reply_body = problem['start_prompt']
-                        
-                        # Ulla's reply subject should be based on the student's "starta övning" subject
-                        reply_subject_for_ulla_start = subject 
-                        # No need to add Re: here as Ulla is initiating her part of the problem thread
-                        # Email clients will make the student's reply "Re: starta övning"
-
-                        if graph_send_email(sender_email, reply_subject_for_ulla_start, initial_reply_body, conversation_id=graph_conversation_id_incoming):
-                            logging.info(f"Skickade initial problembeskrivning till {sender_email}")
-                            mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
-                        else:
-                            logging.error(f"Misslyckades skicka initialt problem. Startkommando INTE markerat som läst.")
-                            # Consider deleting the conversation if the very first email from Ulla fails
-                            delete_conversation(sender_email) 
-                    else:
-                        logging.error(f"Misslyckades skapa/ersätta ny konversation i DB. Startkommando INTE markerat som läst.")
-                else: # Not a start command, no active conversation
-                    logging.warning(f"Mottog e-post från {sender_email} - ej aktiv konversation/startkommando. Ignorerar. Markerar som läst.")
-                    mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
+            
+            else: # No active conversation AND not a start command (already handled above)
+                logging.warning(f"Mottog e-post från {sender_email} - ej aktiv konversation/startkommando. Ignorerar. Markerar som läst.")
+                mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
 
         except Exception as processing_error:
              logging.error(f"Ohanterat fel vid bearbetning av Graph e-post ID {graph_message_id}: {processing_error}", exc_info=True)
+             # Consider how to handle errors: leave unread for retry or mark as error?
     
     if unread_messages:
         logging.info(f"Avslutade Graph e-postbearbetning. {len(processed_graph_ids)} av {len(unread_messages)} e-postmeddelanden markerades som bearbetade.")
+
+
 def mark_email_as_read(graph_message_id):
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/messages/{graph_message_id}"
     payload = {"isRead": True}
@@ -544,6 +560,7 @@ def mark_email_as_read(graph_message_id):
     if make_graph_api_call("PATCH", endpoint, data=payload):
         logging.info(f"Graph e-post {graph_message_id} markerad som läst.")
     else: logging.error(f"Misslyckades markera Graph e-post {graph_message_id} som läst.")
+
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
