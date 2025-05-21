@@ -12,9 +12,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 # --- Import Prompts from prompts.py ---
-from prompts import ULLA_PERSONA_PROMPT, PROBLEM_KATALOG
-# Ollama will only be imported if RUN_EMAIL_BOT is True to avoid error if not installed in read-only mode
-ollama = None
+from prompts import ULLA_PERSONA_PROMPT, PROBLEM_CATALOGUES, START_PHRASES, NUM_LEVELS
+ollama = None # Will be imported if RUN_EMAIL_BOT is True
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
@@ -34,24 +33,18 @@ AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID")
 AZURE_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 TARGET_USER_GRAPH_ID = os.getenv('BOT_EMAIL_ADDRESS')
-
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL')
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 
 logging.info("Miljövariabler inlästa.")
-
 if not all([AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET, TARGET_USER_GRAPH_ID]):
-    logging.critical("Saknar kritisk Graph API-konfiguration i .env.")
-    exit("FEL: Graph API-konfiguration ofullständig.")
-
+    logging.critical("Saknar kritisk Graph API-konfiguration i .env."); exit("FEL: Config ofullständig.")
 ollama_client_args = {}
-if OLLAMA_HOST:
-    ollama_client_args['host'] = OLLAMA_HOST
-    logging.info(f"Ollama-klient konfigurerad för värd: {OLLAMA_HOST}")
+if OLLAMA_HOST: ollama_client_args['host'] = OLLAMA_HOST; logging.info(f"Ollama-klient: {OLLAMA_HOST}")
 
-DB_FILE = 'conversations.db' # New DB name
-RUN_EMAIL_BOT = True # <--- SET TO True FOR FULL BOT, False FOR READ-ONLY
-START_COMMAND_SUBJECT = "starta övning"
+DB_FILE = 'conversations.db' # New DB name for clarity
+RUN_EMAIL_BOT = True
+# START_COMMAND_SUBJECT is now a list in prompts.py (START_PHRASES)
 
 GRAPH_API_ENDPOINT = 'https://graph.microsoft.com/v1.0'
 GRAPH_SCOPES = ['https://graph.microsoft.com/.default']
@@ -59,533 +52,445 @@ MSAL_AUTHORITY = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}"
 MSAL_APP = None
 ACCESS_TOKEN = None
 
-# --- Database Functions (Modified for single string history) ---
+# --- Database Functions (NEW SCHEMA) ---
 def init_db():
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS active_conversations (
+            CREATE TABLE IF NOT EXISTS student_progress (
+                student_email TEXT PRIMARY KEY,
+                next_level_index INTEGER NOT NULL DEFAULT 0,
+                last_completed_problem_id TEXT,
+                last_active_graph_convo_id TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS active_problems (
                 student_email TEXT PRIMARY KEY,
                 problem_id TEXT NOT NULL,
                 problem_description TEXT NOT NULL,
-                correct_solution_keywords TEXT NOT NULL, -- Stored as JSON string
-                conversation_history TEXT NOT NULL,    -- NOW A SINGLE STRING
+                correct_solution_keywords TEXT NOT NULL,
+                conversation_history TEXT NOT NULL,
+                problem_level_index INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                graph_conversation_id TEXT DEFAULT NULL
+                FOREIGN KEY(student_email) REFERENCES student_progress(student_email)
             )
         ''')
         conn.commit()
-        logging.info(f"Databas {DB_FILE} initierad/kontrollerad.")
+        logging.info(f"Databas {DB_FILE} initierad/kontrollerad med nivåstruktur.")
     except sqlite3.Error as e:
         logging.critical(f"Databasinitiering misslyckades: {e}", exc_info=True); raise
     finally:
         if conn: conn.close()
 
-def start_new_conversation(student_email, problem, graph_conversation_id=None):
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        timestamp = datetime.datetime.now()
-        # Initial history is Ulla's first prompt as a single string
-        initial_history_string = f"Ulla: {problem['start_prompt']}\n\n"
-        keywords_json = json.dumps(problem['losning_nyckelord'])
-
-        cursor.execute('''
-            REPLACE INTO active_conversations
-            (student_email, problem_id, problem_description, correct_solution_keywords, conversation_history, created_at, last_update, graph_conversation_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (student_email, problem['id'], problem['beskrivning'], keywords_json, initial_history_string, timestamp, timestamp, graph_conversation_id))
-        conn.commit()
-        logging.info(f"Startade/ersatte konversation för {student_email} med problem {problem['id']}")
-        return True
-    except sqlite3.Error as e:
-        logging.error(f"DB-fel vid start av konv. för {student_email}: {e}", exc_info=True); return False
-    finally:
-        if conn: conn.close()
-
-def get_active_conversation(student_email):
+def get_student_progress(student_email):
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT problem_id, problem_description, correct_solution_keywords, conversation_history, graph_conversation_id
-            FROM active_conversations
-            WHERE student_email = ?
-        ''', (student_email,))
+        cursor.execute("SELECT next_level_index, last_active_graph_convo_id FROM student_progress WHERE student_email = ?", (student_email,))
         row = cursor.fetchone()
-        if row:
-            # conversation_history is now a direct string
-            history_string = row['conversation_history']
-            problem_info = {
-                'id': row['problem_id'],
-                'beskrivning': row['problem_description'],
-                'losning_nyckelord': json.loads(row['correct_solution_keywords'])
-            }
-            graph_convo_id = row['graph_conversation_id']
-            return history_string, problem_info, graph_convo_id # Return string history
-        return None, None, None
-    except (sqlite3.Error, json.JSONDecodeError) as e: # JSONDecodeError for keywords
-        logging.error(f"Fel vid hämtning/avkodning av konv. för {student_email}: {e}", exc_info=True)
-        return None, None, None
+        if row: return row['next_level_index'], row['last_active_graph_convo_id']
+        return 0, None # Default if no record
+    except sqlite3.Error as e:
+        logging.error(f"DB-fel vid hämtning av studentprogress för {student_email}: {e}"); return 0, None
     finally:
         if conn: conn.close()
 
+def update_student_level(student_email, new_next_level_index, last_completed_id=None):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO student_progress (student_email, next_level_index) VALUES (?, ?)", (student_email, 0))
+        if last_completed_id:
+             cursor.execute("UPDATE student_progress SET next_level_index = ?, last_completed_problem_id = ?, last_active_graph_convo_id = NULL WHERE student_email = ?", 
+                           (new_next_level_index, last_completed_id, student_email))
+        else: # Should not happen if we always complete a problem before updating level
+            cursor.execute("UPDATE student_progress SET next_level_index = ? WHERE student_email = ?", (new_next_level_index, student_email))
+        conn.commit()
+        logging.info(f"Student {student_email} uppdaterad till nästa nivå index: {new_next_level_index}")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"DB-fel vid uppdatering av studentnivå för {student_email}: {e}"); return False
+    finally:
+        if conn: conn.close()
 
-def update_conversation_history(student_email, new_entry_string, graph_conversation_id_to_set=None):
+def set_active_problem(student_email, problem, problem_level_idx, graph_conversation_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         timestamp = datetime.datetime.now()
+        initial_history_string = f"Ulla: {problem['start_prompt']}\n\n"
+        keywords_json = json.dumps(problem['losning_nyckelord'])
         
-        # Append new entry to existing history string
-        # Ensure there's a newline separator if history isn't empty
-        # And that new_entry_string also ends with newlines for future appends
-        if not new_entry_string.endswith("\n\n"):
-            new_entry_string += "\n\n"
-
-        if graph_conversation_id_to_set is not None:
-            cursor.execute('''
-                UPDATE active_conversations
-                SET conversation_history = conversation_history || ?, 
-                    last_update = ?,
-                    graph_conversation_id = ?
-                WHERE student_email = ?
-            ''', (new_entry_string, timestamp, graph_conversation_id_to_set, student_email))
-        else:
-            cursor.execute('''
-                UPDATE active_conversations
-                SET conversation_history = conversation_history || ?, 
-                    last_update = ?
-                WHERE student_email = ?
-            ''', (new_entry_string, timestamp, student_email))
+        # Ensure student_progress row exists and update last_active_graph_convo_id
+        current_level, _ = get_student_progress(student_email) # Get current level to preserve it if inserting
+        cursor.execute("INSERT OR IGNORE INTO student_progress (student_email, next_level_index, last_active_graph_convo_id) VALUES (?, ?, ?)",
+                       (student_email, current_level, graph_conversation_id))
+        cursor.execute("UPDATE student_progress SET last_active_graph_convo_id = ? WHERE student_email = ?",
+                       (graph_conversation_id, student_email))
+        
+        cursor.execute('''
+            REPLACE INTO active_problems 
+            (student_email, problem_id, problem_description, correct_solution_keywords, conversation_history, problem_level_index, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (student_email, problem['id'], problem['beskrivning'], keywords_json, initial_history_string, problem_level_idx, timestamp))
         conn.commit()
-        logging.info(f"Uppdaterade konversationshistorik (string) för {student_email}")
+        logging.info(f"Aktivt problem {problem['id']} (Nivå {problem_level_idx + 1}) satt för {student_email}")
         return True
     except sqlite3.Error as e:
-        logging.error(f"DB-fel vid uppdatering av string-historik för {student_email}: {e}", exc_info=True)
-        return False
+        logging.error(f"DB-fel vid sättande av aktivt problem för {student_email}: {e}", exc_info=True); return False
     finally:
         if conn: conn.close()
 
+def get_current_active_problem(student_email):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        # We need last_active_graph_convo_id from student_progress, not active_problems for this query's purpose
+        cursor.execute('''
+            SELECT ap.problem_id, ap.problem_description, ap.correct_solution_keywords, 
+                   ap.conversation_history, ap.problem_level_index, sp.last_active_graph_convo_id
+            FROM active_problems ap
+            LEFT JOIN student_progress sp ON ap.student_email = sp.student_email
+            WHERE ap.student_email = ?
+        ''', (student_email,)) # Use LEFT JOIN in case student_progress somehow missing, though unlikely
+        row = cursor.fetchone()
+        if row:
+            history_string = row['conversation_history']
+            problem_info = {'id': row['problem_id'], 'beskrivning': row['problem_description'], 'losning_nyckelord': json.loads(row['correct_solution_keywords'])}
+            level_idx = row['problem_level_index']
+            active_graph_convo_id = row['last_active_graph_convo_id'] # This is the key convo ID for the current problem
+            return history_string, problem_info, level_idx, active_graph_convo_id
+        return None, None, None, None
+    except (sqlite3.Error, json.JSONDecodeError) as e:
+        logging.error(f"Fel vid hämtning av aktivt problem för {student_email}: {e}", exc_info=True); return None, None, None, None
+    finally:
+        if conn: conn.close()
 
-def delete_conversation(student_email): # Unchanged
-    # ... (same as your existing delete_conversation) ...
+def append_to_active_problem_history(student_email, text_to_append):
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM active_conversations WHERE student_email = ?', (student_email,))
+        if not text_to_append.endswith("\n\n"): text_to_append += "\n\n"
+        cursor.execute("UPDATE active_problems SET conversation_history = conversation_history || ? WHERE student_email = ?", (text_to_append, student_email))
         conn.commit()
-        if cursor.rowcount > 0: logging.info(f"Raderade avslutad konversation för {student_email}"); return True
-        return False
+        logging.info(f"Lade till i historik för aktivt problem för {student_email}")
+        return True
     except sqlite3.Error as e:
-        logging.error(f"DB-fel vid radering av konversation för {student_email}: {e}", exc_info=True); return False
+        logging.error(f"DB-fel vid tillägg i historik för {student_email}: {e}"); return False
     finally:
         if conn: conn.close()
 
-# --- LLM Interaction (Modified for detailed logging) ---
+def clear_active_problem(student_email):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        # Delete from active_problems
+        cursor.execute("DELETE FROM active_problems WHERE student_email = ?", (student_email,))
+        deleted_rows = cursor.rowcount
+        # Clear last_active_graph_convo_id in student_progress
+        cursor.execute("UPDATE student_progress SET last_active_graph_convo_id = NULL WHERE student_email = ?", (student_email,))
+        conn.commit()
+        if deleted_rows > 0: logging.info(f"Rensade aktivt problem för {student_email}"); return True
+        logging.info(f"Inget aktivt problem att rensa för {student_email}, men rensade convo ID i progress.")
+        return True # Still true if convo ID was cleared
+    except sqlite3.Error as e:
+        logging.error(f"DB-fel vid rensning av aktivt problem för {student_email}: {e}"); return False
+    finally:
+        if conn: conn.close()
+
+
+# --- LLM Interaction (Unchanged from previous full script) ---
 def get_llm_response_with_history(student_email, full_history_string, problem_info, latest_student_message_cleaned):
-    global ollama # To access the imported module
-    if not OLLAMA_MODEL:
-        logging.error("OLLAMA_MODEL miljövariabel ej satt.")
-        return "Nej men kära nån, nu tappade jag tråden helt...", False
-
+    # ... (Your existing LLM function with detailed logging) ...
+    global ollama 
+    if not OLLAMA_MODEL: logging.error("OLLAMA_MODEL ej satt."); return "Tappade tråden...", False
     logging.info(f"Hämtar LLM-svar för {student_email} (modell: {OLLAMA_MODEL})")
-
-    persona_with_history_awareness = f"""{ULLA_PERSONA_PROMPT}
-Du har haft följande konversation hittills (senaste meddelandet från studenten är inkluderat i slutet av detta):
---- KONVERSATIONSHISTORIK ---
-{full_history_string}
---- SLUT KONVERSATIONSHISTORIK ---
-"""
-
-    system_prompt_combined = f"""{persona_with_history_awareness}
-Ditt nuvarande specifika tekniska problem är: {problem_info['beskrivning']}
-Den korrekta tekniska lösningen innefattar specifikt dessa idéer/nyckelord: {problem_info['losning_nyckelord']}
-Du ska utvärdera studentens SENASTE meddelande (som är det sista "Support:"-meddelandet i historiken ovan) baserat på denna historik och den exakta korrekta lösningen."""
-
-    evaluation_prompt = f"""**Utvärdering:** Har studenten i sitt SENASTE meddelande (det sista "Support:"-meddelandet i historiken ovan) föreslagit den specifika korrekta lösningen relaterad till '{problem_info['losning_nyckelord']}'? (Analysera mot *exakta* nyckelord/koncept. Generella IT-råd är fel om de inte direkt adresserar nyckelorden.)
-**Instruktion för ditt svar:**
-1. Skriv *först*, på en helt egen rad och utan någon annan text på den raden, antingen `[LÖST]` eller `[EJ_LÖST]`.\n2. Börja sedan på en *ny rad* och skriv ditt svar *som Ulla*.
-"""
-    
-    messages_for_ollama = [
-        {'role': 'system', 'content': system_prompt_combined},
-        {'role': 'user', 'content': evaluation_prompt} 
-    ]
-
-    # --- DETAILED LOGGING OF LLM INTERACTION ---
+    persona_hist = f"{ULLA_PERSONA_PROMPT}\nDu har haft följande konversation:\n--- HISTORIK ---\n{full_history_string}\n--- SLUT HISTORIK ---"
+    sys_prompt = f"{persona_hist}\nDitt problem: {problem_info['beskrivning']}\nLösningsnyckelord: {problem_info['losning_nyckelord']}\nUtvärdera SENASTE \"Support:\"-meddelande."
+    eval_prompt = f"**Utvärdering:** Matchar SENASTE \"Support:\"-meddelande nyckelorden '{problem_info['losning_nyckelord']}'? (Behöver ej vara exakt, men andemeningen.)\n**Svarsinstruktion:**\n1. Första raden: `[LÖST]` eller `[EJ_LÖST]`.\n2. Ny rad: Svara som Ulla."
+    messages = [{'role': 'system', 'content': sys_prompt}, {'role': 'user', 'content': eval_prompt}]
+    logging.info(f"--- MEDDELANDE TILL OLLAMA ({student_email}) ---\n{json.dumps(messages, indent=2, ensure_ascii=False)}\n--- SLUT MEDDELANDE ---")
     try:
-        # Log the exact messages being sent to Ollama
-        # For readability, pretty-print the JSON structure of messages_for_ollama
-        # Be cautious with logging very long histories in production, but good for debug.
-        logging.info(f"--- MEDDELANDE TILL OLLAMA (för {student_email}) ---")
-        try:
-            # Attempt to pretty print the JSON for better log readability
-            pretty_messages = json.dumps(messages_for_ollama, indent=2, ensure_ascii=False)
-            logging.info(f"\n{pretty_messages}")
-        except TypeError: # In case some part is not serializable, log as is
-            logging.info(str(messages_for_ollama))
-        logging.info("--- SLUT MEDDELANDE TILL OLLAMA ---")
-
-        response = ollama.chat(
-            model=OLLAMA_MODEL,
-            messages=messages_for_ollama,
-            options={'temperature': 0.7, 'num_predict': 1000}, # Adjust num_predict if needed
-            **ollama_client_args
-        )
-        raw_reply_from_llm = response['message']['content'] # Get the raw string
-
-        # Log the exact raw reply from Ollama BEFORE any cleaning/splitting
-        logging.info(f"--- RÅTT SVAR FRÅN OLLAMA (för {student_email}) ---")
-        logging.info(f"\n{raw_reply_from_llm}")
-        logging.info("--- SLUT RÅTT SVAR FRÅN OLLAMA ---")
-        
-        # Proceed with parsing the raw reply
-        processed_reply = raw_reply_from_llm.strip() # Basic strip first
-        lines = processed_reply.split('\n', 1) 
-        marker = lines[0].strip()
+        response = ollama.chat(model=OLLAMA_MODEL, messages=messages, options={'temperature': 0.7, 'num_predict': 1000}, **ollama_client_args)
+        raw_reply = response['message']['content']
+        logging.info(f"--- RÅTT SVAR FRÅN OLLAMA ({student_email}) ---\n{raw_reply}\n--- SLUT RÅTT SVAR ---")
+        processed_reply = raw_reply.strip(); lines = processed_reply.split('\n', 1); marker = lines[0].strip()
         is_solved = (marker == "[LÖST]")
-        
-        if len(lines) > 1:
-            ulla_reply = lines[1].strip()
-            # Remove markers if they somehow leak into Ulla's part AFTER the first line
-            ulla_reply = ulla_reply.replace("[LÖST]", "").replace("[EJ_LÖST]", "").strip()
-        elif is_solved: 
-            ulla_reply = "Åh, tack snälla du, nu fungerar det visst!"
-            logging.warning(f"LLM returnerade bara LÖST-markör för {student_email}. Använder reservsvar.")
-        else: # EJ_LÖST or unexpected marker/text is returned as the only line
-            ulla_reply = "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
-            logging.warning(f"LLM returnerade bara EJ_LÖST-markör eller oväntat/kort svar för {student_email}. Använder reservsvar.")
-            is_solved = False # Ensure is_solved is False if marker wasn't exactly [LÖST]
-
-        if not ulla_reply: # If Ulla's reply ended up empty after processing
-             ulla_reply = "Åh, tack snälla du, nu fungerar det visst!" if is_solved else "Jaha ja, jag är inte riktigt säker på vad jag ska göra nu..."
-             logging.warning(f"Ullas svar var tomt efter bearbetning för {student_email}. Använder reservsvar.")
-
-        logging.info(f"LLM genererade svar för {student_email}. Rå marker: '{marker}'. Tolkat som löst: {is_solved}. Ullas svar: '{ulla_reply[:100]}...'")
+        ulla_reply = lines[1].strip() if len(lines) > 1 else ("Tack!" if is_solved else "Jaha?")
+        ulla_reply = ulla_reply.replace("[LÖST]", "").replace("[EJ_LÖST]", "").strip()
+        if not ulla_reply: ulla_reply = "Tack!" if is_solved else "Jaha?"
+        logging.info(f"LLM: Marker: '{marker}'. Löst: {is_solved}. Svar: '{ulla_reply[:50]}...'")
         return ulla_reply, is_solved
-        
-    except ollama.ResponseError as e:
-         logging.error(f"Ollama API-fel för {student_email}: {e.error} (Status: {e.status_code})", exc_info=True)
-         return "Nej men kära nån, nu krånglar min tankeverksamhet...", False
-    except ConnectionRefusedError:
-         logging.error(f"Kunde inte ansluta till Ollama-servern ({ollama_client_args.get('host', 'http://localhost:11434')}). Kör Ollama?")
-         return "Det verkar vara upptaget i ledningen just nu...", False
-    except Exception as e: # Catch any other exceptions during the LLM call or processing
-        logging.error(f"Oväntat fel vid anrop av Ollama LLM för {student_email}: {e}", exc_info=True)
-        return "Nej, nu vet jag inte vad jag ska ta mig till...", False
-
-# ... (rest of your script, including the main block, database functions, Graph API functions, etc.)
+    except Exception as e:
+        logging.error(f"Ollama LLM-fel för {student_email}: {e}", exc_info=True); return "Tankeverksamheten krånglar...", False
 
 
-# --- Graph API Helper Functions (msal + requests) ---
-def get_graph_token():
+# --- Graph API Helper Functions (msal + requests - Unchanged) ---
+def get_graph_token(): # ... (same as before) ...
     global MSAL_APP, ACCESS_TOKEN
-    if MSAL_APP is None:
-        MSAL_APP = msal.ConfidentialClientApplication(
-            AZURE_CLIENT_ID, authority=MSAL_AUTHORITY, client_credential=AZURE_CLIENT_SECRET
-        )
+    if MSAL_APP is None: MSAL_APP = msal.ConfidentialClientApplication(AZURE_CLIENT_ID, authority=MSAL_AUTHORITY, client_credential=AZURE_CLIENT_SECRET)
     token_result = MSAL_APP.acquire_token_silent(GRAPH_SCOPES, account=None)
-    if not token_result:
-        logging.info("Inget giltigt Graph API-token i cache, hämtar nytt.")
-        token_result = MSAL_APP.acquire_token_for_client(scopes=GRAPH_SCOPES)
-    if "access_token" in token_result:
-        ACCESS_TOKEN = token_result['access_token']
-        return ACCESS_TOKEN
-    else:
-        logging.error(f"Misslyckades hämta Graph API-token: {token_result.get('error_description')}")
-        ACCESS_TOKEN = None; return None
+    if not token_result: logging.info("Hämtar nytt Graph API-token."); token_result = MSAL_APP.acquire_token_for_client(scopes=GRAPH_SCOPES)
+    if "access_token" in token_result: ACCESS_TOKEN = token_result['access_token']; return ACCESS_TOKEN
+    logging.error(f"Misslyckades hämta Graph token: {token_result.get('error_description')}"); ACCESS_TOKEN = None; return None
 
-def jwt_is_expired(token_str):
+def jwt_is_expired(token_str): # ... (same as before) ...
     if not token_str: return True
-    try:
-        payload_str = token_str.split('.')[1]; payload_str += '=' * (-len(payload_str) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(payload_str).decode())
-        return payload.get('exp', 0) < time.time()
+    try: payload_str = token_str.split('.')[1]; payload_str += '=' * (-len(payload_str) % 4); payload = json.loads(base64.urlsafe_b64decode(payload_str).decode()); return payload.get('exp', 0) < time.time()
     except Exception: return True
 
-def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers_extra=None):
+def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers_extra=None): # ... (same as before) ...
     global ACCESS_TOKEN
     if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
-        logging.info("ACCESS_TOKEN är None eller utgånget, försöker hämta/förnya.")
-        if not get_graph_token(): logging.error("Misslyckades hämta/förnya token."); return None
+        if not get_graph_token(): logging.error("Misslyckades förnya token."); return None
     if ACCESS_TOKEN is None: logging.error("ACCESS_TOKEN fortfarande None."); return None
-    headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}
+    headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}; url = f"{GRAPH_API_ENDPOINT}{endpoint_suffix}"
     if headers_extra: headers.update(headers_extra)
-    url = f"{GRAPH_API_ENDPOINT}{endpoint_suffix}"
     try:
-        response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
-        response.raise_for_status()
+        response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30); response.raise_for_status()
         if response.status_code in [202, 204]: return True
         return response.json()
     except requests.exceptions.HTTPError as e:
-        if e.response.status_code == 401:
-            logging.warning("Graph API 401 (Unauthorized). Ogiltigförklarar token."); ACCESS_TOKEN = None
-        err_details = "Okänd felstruktur."
-        try: err_details = e.response.json().get("error", {}).get("message", e.response.text)
-        except json.JSONDecodeError: err_details = e.response.text
-        logging.error(f"Graph API HTTP-fel: {e.response.status_code} - {err_details} för {method} {url}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Graph API anropsfel: {e} för {method} {url}", exc_info=True); return None
-
+        if e.response.status_code == 401: logging.warning("Graph API 401. Ogiltigförklarar token."); ACCESS_TOKEN = None
+        err_details = "Okänt." ; 
+        try: 
+            err_details = e.response.json().get("error", {}).get("message", e.response.text)
+        except json.JSONDecodeError: 
+            err_details = e.response.text
+        logging.error(f"Graph HTTP-fel: {e.response.status_code} - {err_details} ({method} {url})"); return None
+    except requests.exceptions.RequestException as e: logging.error(f"Graph anropsfel: {e} ({method} {url})", exc_info=True); return None
 
 # --- Graph API Email Functions ---
-def graph_send_email(recipient_email, subject, body_content, 
-                     in_reply_to_message_id=None, # This is the InternetMessageID of the email being replied to
-                     references_header_str=None,    # This is the full References string
-                     conversation_id=None):
-    message_payload = {
-        "message": {
-            "subject": subject,
-            "body": {"contentType": "Text", "content": body_content},
-            "toRecipients": [{"emailAddress": {"address": recipient_email}}]
-        },
-        "saveToSentItems": "true"
-    }
-
+def graph_send_email(recipient_email, subject, body_content, in_reply_to_message_id=None, references_header_str=None, conversation_id=None): # ... (same, uses X- prefixed headers) ...
+    message_payload = {"message": {"subject": subject, "body": {"contentType": "Text", "content": body_content}, "toRecipients": [{"emailAddress": {"address": recipient_email}}]}, "saveToSentItems": "true"}
     headers_list = []
-    # IMPORTANT: Graph API requires custom headers (even standard ones set this way)
-    # to be prefixed with X- or x-
-    if in_reply_to_message_id:
-        # While In-Reply-To is standard, setting it via internetMessageHeaders might require the X- prefix.
-        # However, a more common way for replies is to ensure the conversationId is set,
-        # and the `replyToMessageId` property MIGHT be available on the message object directly
-        # for a reply action (though sendMail is more general).
-        # Let's try with the X- prefix for explicit control.
-        headers_list.append({"name": "X-In-Reply-To", "value": in_reply_to_message_id})
-    
-    if references_header_str:
-        headers_list.append({"name": "X-References", "value": references_header_str})
-    
-    # Setting conversationId directly on the message is usually preferred by Graph
-    # for its own threading if available and correct.
-    if conversation_id:
-         message_payload["message"]["conversationId"] = conversation_id # This is good
-    
-    if headers_list:
-        message_payload["message"]["internetMessageHeaders"] = headers_list
-
+    if in_reply_to_message_id: headers_list.append({"name": "X-In-Reply-To", "value": in_reply_to_message_id})
+    if references_header_str: headers_list.append({"name": "X-References", "value": references_header_str})
+    if conversation_id: message_payload["message"]["conversationId"] = conversation_id
+    if headers_list: message_payload["message"]["internetMessageHeaders"] = headers_list
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/sendMail"
-    logging.info(f"Skickar e-post via Graph till: {recipient_email} | Ämne: {subject}")
-    # logging.debug(f"SendMail payload: {json.dumps(message_payload, indent=2)}") # For debugging payload
-    
+    logging.info(f"Skickar e-post till: {recipient_email} | Ämne: {subject}")
     response = make_graph_api_call("POST", endpoint, data=message_payload)
-    
-    if response is True: # make_graph_api_call returns True for 202 Accepted
-        logging.info("E-post skickat framgångsrikt via Graph API.")
-        return True
-    else:
-        logging.error(f"Misslyckades skicka e-post via Graph API. Svar från API: {response}")
-        return False
+    if response is True: logging.info("E-post skickat."); return True
+    logging.error(f"Misslyckades skicka e-post. Svar: {response}"); return False
 
-
-def clean_email_body(body_text, original_sender_email_for_attribution=None): # Your existing improved clean_email_body
-    # ... (same as your existing clean_email_body) ...
+def clean_email_body(body_text, original_sender_email_for_attribution=None): # ... (same as before) ...
     if not body_text: return ""
-    lines = body_text.splitlines()
-    cleaned_lines = []
-    quote_indicators_sw = ["från:", "-----ursprungligt meddelande-----", "den ", "på "]
-    quote_indicators_en = ["from:", "-----original message-----", "on ", "wrote:"]
-    # Add specific attribution line if original_sender is known
-    if original_sender_email_for_attribution:
-        quote_indicators_sw.append(f"skrev {original_sender_email_for_attribution.lower()}")
-
-    all_quote_indicators = [q.lower() for q in quote_indicators_sw + quote_indicators_en]
-    attribution_line_found = False
+    lines = body_text.splitlines(); cleaned_lines = []
+    q_sw = ["från:", "--ursprungl meddelande--", "den ", "på "]; q_en = ["from:", "--original message--", "on ", "wrote:"]
+    if original_sender_email_for_attribution: q_sw.append(f"skrev {original_sender_email_for_attribution.lower()}")
+    all_q = [q.lower() for q in q_sw + q_en]; found_q = False
     for line in lines:
-        stripped_line_lower = line.strip().lower()
-        if ((" skrev " in stripped_line_lower or " wrote " in stripped_line_lower) and
-             original_sender_email_for_attribution and 
-             original_sender_email_for_attribution.lower() in stripped_line_lower): # More specific check
-            attribution_line_found = True; break
-        for indicator in all_quote_indicators:
-            if stripped_line_lower.startswith(indicator):
-                attribution_line_found = True; break
-        if attribution_line_found: break
+        s_line_lower = line.strip().lower()
+        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and original_sender_email_for_attribution and original_sender_email_for_attribution.lower() in s_line_lower): found_q = True; break
+        for indicator in all_q:
+            if s_line_lower.startswith(indicator): found_q = True; break
+        if found_q: break
         if not line.strip().startswith('>'): cleaned_lines.append(line)
     final_text = "\n".join(cleaned_lines).strip()
     if not final_text and body_text.strip(): return "" 
     return final_text
 
+def mark_email_as_read(graph_message_id): # ... (same as before) ...
+    endpoint = f"/users/{TARGET_USER_GRAPH_ID}/messages/{graph_message_id}"; payload = {"isRead": True}
+    # logging.debug(f"Markerar {graph_message_id} som läst...") # Can be too verbose
+    if make_graph_api_call("PATCH", endpoint, data=payload): logging.info(f"E-post {graph_message_id} markerad som läst.")
+    else: logging.error(f"Misslyckades markera {graph_message_id} som läst.")
 
+
+# --- Core Email Processing (graph_check_emails - HEAVILY MODIFIED) ---
 def graph_check_emails():
     global ACCESS_TOKEN
-    # For Graph API, select fields that provide necessary information
-    select_fields = "id,subject,from,sender,toRecipients,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
+    select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
-    
-    logging.info("Söker efter olästa e-postmeddelanden via Graph API...")
+    logging.info("Söker olästa e-post (Graph)...")
     response_data = make_graph_api_call("GET", endpoint, params=params)
 
     if not response_data or "value" not in response_data:
-        if response_data is None: logging.warning("Ingen data/fel vid hämtning av e-post från Graph.")
-        else: logging.info("Inga olästa e-postmeddelanden (Graph).")
+        if response_data is None: logging.warning("Ingen data/fel från Graph.")
+        else: logging.info("Inga olästa e-post (Graph).")
         return
 
     unread_messages = response_data["value"]
-    if not unread_messages: logging.info("Inga olästa e-postmeddelanden (Graph)."); return
-    logging.info(f"Hittade {len(unread_messages)} olästa e-postmeddelanden (Graph).")
+    if not unread_messages: logging.info("Inga olästa e-post (Graph)."); return
+    logging.info(f"Hittade {len(unread_messages)} olästa e-post (Graph).")
     
-    processed_graph_ids = set()
-
+    processed_ids = set()
     for msg_graph in unread_messages:
-        graph_message_id = msg_graph.get('id')
-        logging.info(f"--- Bearbetar Graph e-post ID: {graph_message_id} ---")
+        graph_msg_id = msg_graph.get('id')
+        logging.info(f"--- Bearbetar e-post ID: {graph_msg_id} ---")
         try:
-            subject_from_email = msg_graph.get('subject', "") # Default to empty string
+            subject = msg_graph.get('subject', "")
             sender_info = msg_graph.get('from') or msg_graph.get('sender')
             sender_email = sender_info.get('emailAddress', {}).get('address', '').lower() if sender_info else ''
-            internet_message_id = msg_graph.get('internetMessageId')
-            graph_conversation_id_incoming = msg_graph.get('conversationId')
-            references_header_value = next((h.get('value') for h in msg_graph.get('internetMessageHeaders', []) if h.get('name', '').lower() == 'references'), None)
-            
-            logging.info(f"Från: {sender_email} | Ämne: '{subject_from_email}' | Graph ID: {graph_message_id}")
+            inet_msg_id = msg_graph.get('internetMessageId')
+            graph_convo_id_in = msg_graph.get('conversationId')
+            refs_header = next((h.get('value') for h in msg_graph.get('internetMessageHeaders', []) if h.get('name', '').lower() == 'references'), None)
+            logging.info(f"Från: {sender_email} | Ämne: '{subject}'")
 
             if not sender_email or sender_email == TARGET_USER_GRAPH_ID.lower() or 'mailer-daemon' in sender_email or 'noreply' in sender_email:
-                logging.warning(f"Skippar e-post (själv, studs, no-reply). Markerar som läst.")
-                mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id); continue
+                logging.warning("Skippar (själv/system). Markerar läst."); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
 
-            # Extract and clean body FIRST, as it's needed for start command check too
-            email_body_graph_obj = msg_graph.get('body', {})
-            email_body_content = email_body_graph_obj.get('content', '')
-            raw_body_for_cleaning = ""
-            if email_body_graph_obj.get('contentType', '').lower() == 'html':
-                soup = BeautifulSoup(email_body_content, "html.parser")
-                raw_body_for_cleaning = soup.get_text(separator='\n').strip()
-            else: # Plain text
-                raw_body_for_cleaning = email_body_content
+            body_obj = msg_graph.get('body', {}); body_content = body_obj.get('content', '')
+            raw_body = BeautifulSoup(body_content, "html.parser").get_text(separator='\n').strip() if body_obj.get('contentType','').lower()=='html' else body_content
+            cleaned_body = clean_email_body(raw_body, TARGET_USER_GRAPH_ID)
+            logging.debug(f"Rensad text: '{cleaned_body[:100]}...'")
+
+            student_level_idx, last_active_convo_id_progress = get_student_progress(sender_email)
+            active_hist_str, active_problem_info, active_problem_level_idx, active_problem_convo_id_db = get_current_active_problem(sender_email)
             
-            # Use the original cleaned body for start command check in body
-            # This `email_body_cleaned_raw` is before further stripping for LLM.
-            email_body_cleaned_raw = clean_email_body(raw_body_for_cleaning, TARGET_USER_GRAPH_ID) 
-            logging.debug(f"Rå-rensad e-posttext för ID {graph_message_id} (för startkommando-check): '{email_body_cleaned_raw[:150]}...'")
+            is_valid_start_command = False
+            triggered_start_phrase_for_level = None
 
+            for idx, phrase in enumerate(START_PHRASES):
+                # Check if student is AT this level to start it
+                if idx == student_level_idx: 
+                    if (subject and phrase.lower() in subject.lower()) or \
+                       (cleaned_body.lower().strip().startswith(phrase.lower())):
+                        is_valid_start_command = True
+                        triggered_start_phrase_for_level = phrase
+                        logging.info(f"Giltigt startkommando '{phrase}' för nivå {idx+1} från {sender_email}.")
+                        break
+                # Allow restarting a level they are on, or starting their next level
+                # This means if they are on level 0, they can use phrase for level 0.
+                # If they are on level 1 (meaning they completed level 0), they can use phrase for level 1.
 
-            # --- MODIFIED LOGIC FOR START COMMAND AND CONVERSATION HANDLING ---
-            history_string, problem_info, existing_graph_convo_id_db = get_active_conversation(sender_email)
-            
-            is_start_command = False
-            if history_string and problem_info: # Active conversation exists
-                # Check if the BODY of this email starts with the command to override/restart
-                if email_body_cleaned_raw.lower().strip().startswith(START_COMMAND_SUBJECT):
-                    is_start_command = True
-                    logging.info(f"Startkommando hittat i E-POSTTEXT från {sender_email} för aktiv konversation. Startar om övning.")
-            else: # No active conversation
-                # Check both subject AND body for the start command
-                if (subject_from_email and START_COMMAND_SUBJECT in subject_from_email.lower()) or \
-                   (email_body_cleaned_raw.lower().strip().startswith(START_COMMAND_SUBJECT)):
-                    is_start_command = True
-                    logging.info(f"Startkommando hittat från {sender_email} (ingen aktiv konversation). Startar ny övning.")
+            if is_valid_start_command:
+                if student_level_idx >= NUM_LEVELS:
+                    logging.info(f"Student {sender_email} har redan klarat alla {NUM_LEVELS} nivåer.")
+                    # Optionally send a "Congrats, you're done!" email
+                    mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
 
-            if is_start_command:
-                problem = random.choice(PROBLEM_KATALOG)
-                if start_new_conversation(sender_email, problem, graph_conversation_id_incoming):
-                    initial_reply_body = problem['start_prompt']
-                    # Use the incoming email's subject if it was the trigger, or a generic one if body was trigger
-                    reply_subject_for_ulla_start = subject_from_email if START_COMMAND_SUBJECT in subject_from_email.lower() else "Ny övning påbörjad"
-                    
-                    if graph_send_email(sender_email, reply_subject_for_ulla_start, initial_reply_body, conversation_id=graph_conversation_id_incoming):
-                        logging.info(f"Skickade initial problembeskrivning till {sender_email}")
-                        mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
-                    else:
-                        logging.error(f"Misslyckades skicka initialt problem. Startkommando INTE markerat som läst.")
-                        delete_conversation(sender_email) # Rollback if Ulla's first mail fails
-                else:
-                    logging.error(f"Misslyckades skapa/ersätta ny konversation i DB. Startkommando INTE markerat som läst.")
-            
-            elif history_string and problem_info: # Active conversation exists AND it's NOT a body-based restart command
-                logging.info(f"E-post {graph_message_id} tillhör aktiv konversation för {sender_email} (ej omstart).")
+                problem_list = PROBLEM_CATALOGUES[student_level_idx]
+                if not problem_list: logging.error(f"Inga problem för nivå {student_level_idx+1}!"); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
                 
-                # email_body_final_for_llm should be the cleaned message content
-                email_body_final_for_llm = email_body_cleaned_raw # Use the already cleaned body
-                if not email_body_final_for_llm.strip(): # Check if it's empty after cleaning
-                    logging.warning(f"E-posttext tom efter rensning för ID {graph_message_id} (i aktiv konv.). Använder bodyPreview.")
-                    email_body_final_for_llm = (msg_graph.get('bodyPreview') or "").strip()
-                    if not email_body_final_for_llm:
-                        logging.warning(f"BodyPreview också tom för ID {graph_message_id}. Skippar svar. Markerar som läst.")
-                        mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id); continue
-                
-                new_student_entry = f"Support: {email_body_final_for_llm}\n\n"
-                update_conversation_history(sender_email, new_student_entry, graph_conversation_id_incoming) 
-                current_full_history = history_string + new_student_entry
-
-                reply_body, is_solved = get_llm_response_with_history(sender_email, current_full_history, problem_info, email_body_final_for_llm)
-
-                if reply_body:
-                    new_ulla_entry = f"Ulla: {reply_body}\n\n"
-                    current_convo_id_for_reply = graph_conversation_id_incoming or existing_graph_convo_id_db
-                    new_references_for_reply = f"{references_header_value if references_header_value else ''} {internet_message_id}".strip()
-                    
-                    reply_subject_for_ulla = subject_from_email # Use the student's current subject
-                    if not reply_subject_for_ulla.lower().startswith("re:"):
-                        reply_subject_for_ulla = f"Re: {subject_from_email}"
-
-                    if graph_send_email(sender_email, reply_subject_for_ulla, reply_body, 
-                                        in_reply_to_message_id=internet_message_id, 
-                                        references_header_str=new_references_for_reply, 
-                                        conversation_id=current_convo_id_for_reply):
-                        update_conversation_history(sender_email, new_ulla_entry)
-                        if is_solved: delete_conversation(sender_email)
-                        mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
-                        logging.info(f"Bearbetat och svarat på Graph e-post {graph_message_id} för {sender_email}.")
-                    else: logging.error(f"Misslyckades skicka svar. E-post INTE markerad som läst.")
-                else: logging.error(f"Misslyckades få LLM-svar. E-post INTE markerad som läst.")
+                problem = random.choice(problem_list)
+                if set_active_problem(sender_email, problem, student_level_idx, graph_convo_id_in):
+                    reply_subject = subject if START_PHRASES[student_level_idx].lower() in subject.lower() else f"Övning Nivå {student_level_idx + 1}"
+                    if graph_send_email(sender_email, reply_subject, problem['start_prompt'], conversation_id=graph_convo_id_in):
+                        logging.info(f"Skickade problem (Nivå {student_level_idx+1}) till {sender_email}")
+                        mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id)
+                    else: logging.error("Misslyckades skicka initialt problem."); clear_active_problem(sender_email) # Rollback
+                else: logging.error("Misslyckades sätta aktivt problem i DB.")
             
-            else: # No active conversation AND not a start command (already handled above)
-                logging.warning(f"Mottog e-post från {sender_email} - ej aktiv konversation/startkommando. Ignorerar. Markerar som läst.")
-                mark_email_as_read(graph_message_id); processed_graph_ids.add(graph_message_id)
+            elif active_hist_str and active_problem_info: # Active problem, not a start command
+                logging.info(f"E-post tillhör aktivt problem {active_problem_info['id']} för {sender_email}")
+                body_for_llm = cleaned_body if cleaned_body.strip() else (msg_graph.get('bodyPreview') or "").strip()
+                if not body_for_llm:
+                    logging.warning("Tom text/förhandsvisning. Ignorerar. Markerar läst."); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
+                
+                student_entry = f"Support: {body_for_llm}\n\n"
+                append_to_active_problem_history(sender_email, student_entry) # Add student's msg
+                full_hist_for_llm = active_hist_str + student_entry
 
-        except Exception as processing_error:
-             logging.error(f"Ohanterat fel vid bearbetning av Graph e-post ID {graph_message_id}: {processing_error}", exc_info=True)
-             # Consider how to handle errors: leave unread for retry or mark as error?
+                ulla_reply_body, is_solved = get_llm_response_with_history(sender_email, full_hist_for_llm, active_problem_info, body_for_llm)
+
+                if ulla_reply_body:
+                    final_ulla_reply = ulla_reply_body
+                    if is_solved:
+                        next_lvl_idx = active_problem_level_idx + 1
+                        completion_msg = f"\n\nJättebra! Problem {active_problem_info['id']} (Nivå {active_problem_level_idx + 1}) är löst!"
+                        if next_lvl_idx < NUM_LEVELS:
+                            completion_msg += f"\nStartfras för nästa nivå ({next_lvl_idx + 1}): \"{START_PHRASES[next_lvl_idx]}\""
+                        else: completion_msg += "\nDu har klarat alla nivåer! Grattis!"
+                        final_ulla_reply += completion_msg
+                    
+                    ulla_entry_for_db = f"Ulla: {final_ulla_reply}\n\n" # Use potentially augmented reply for DB
+                    
+                    reply_subj = subject if not subject.lower().startswith("re:") else subject
+                    if not reply_subj.lower().startswith("re:"): reply_subj = f"Re: {subject}"
+                    
+                    # Use graph_convo_id_in from current email or fallback to stored one for this problem
+                    convo_id_for_reply = graph_convo_id_in or active_problem_convo_id_db
+                    refs_for_reply = f"{refs_header if refs_header else ''} {inet_msg_id}".strip()
+
+                    if graph_send_email(sender_email, reply_subj, final_ulla_reply, inet_msg_id, refs_for_reply, convo_id_for_reply):
+                        append_to_active_problem_history(sender_email, ulla_entry_for_db) # Add Ulla's full reply
+                        if is_solved:
+                            clear_active_problem(sender_email)
+                            update_student_level(sender_email, active_problem_level_idx + 1, active_problem_info['id'])
+                        mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id)
+                        logging.info(f"Bearbetat och svarat på e-post {graph_msg_id}.")
+                    else: logging.error("Misslyckades skicka svar. E-post INTE markerad som läst.")
+                else: logging.error("Misslyckades få LLM-svar. E-post INTE markerad som läst.")
+            
+            else: # No active problem & not a valid start command for their level
+                logging.warning(f"E-post från {sender_email} - inget aktivt problem/giltigt startkommando. Ignorerar. Markerar läst.")
+                mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id)
+        
+        except Exception as proc_err:
+             logging.error(f"Ohanterat fel vid bearbetning av e-post ID {graph_msg_id}: {proc_err}", exc_info=True)
     
     if unread_messages:
-        logging.info(f"Avslutade Graph e-postbearbetning. {len(processed_graph_ids)} av {len(unread_messages)} e-postmeddelanden markerades som bearbetade.")
-
-
-def mark_email_as_read(graph_message_id):
-    endpoint = f"/users/{TARGET_USER_GRAPH_ID}/messages/{graph_message_id}"
-    payload = {"isRead": True}
-    logging.debug(f"Markerar Graph e-post {graph_message_id} som läst...")
-    if make_graph_api_call("PATCH", endpoint, data=payload):
-        logging.info(f"Graph e-post {graph_message_id} markerad som läst.")
-    else: logging.error(f"Misslyckades markera Graph e-post {graph_message_id} som läst.")
-
+        logging.info(f"Avslutade e-postbearbetning. {len(processed_ids)} av {len(unread_messages)} markerades bearbetade.")
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    logging.info("Script startat (Graph API-version, string history).")
+    logging.info(f"Script startat (DB: {DB_FILE}). RUN_EMAIL_BOT={RUN_EMAIL_BOT}")
     try: init_db()
-    except Exception as db_err: logging.critical(f"Misslyckades initiera databas: {db_err}. Avslutar."); exit(1)
+    except Exception as db_err: logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
+
+    # --- Add DB Print Option via Command Line Argument ---
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
+        def print_db_content(): # Keep this local to main or make it a proper function
+            conn_pdb = None
+            print("\n--- UTSKRIFT STUDENT PROGRESS ---")
+            try:
+                conn_pdb = sqlite3.connect(DB_FILE); conn_pdb.row_factory = sqlite3.Row; c_pdb = conn_pdb.cursor()
+                c_pdb.execute("SELECT * FROM student_progress"); rows_pdb = c_pdb.fetchall()
+                if not rows_pdb: print("Tabellen student_progress är tom.")
+                else: 
+                    for r_pdb in rows_pdb: print(dict(r_pdb)) # Print as dict for readability
+            except Exception as e_pdb: print(f"Fel vid utskrift av student_progress: {e_pdb}")
+            finally: 
+                if conn_pdb: conn_pdb.close()
+
+            conn_apdb = None
+            print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
+            try:
+                conn_apdb = sqlite3.connect(DB_FILE); conn_apdb.row_factory = sqlite3.Row; c_apdb = conn_apdb.cursor()
+                c_apdb.execute("SELECT * FROM active_problems"); rows_apdb = c_apdb.fetchall()
+                if not rows_apdb: print("Tabellen active_problems är tom.")
+                else: 
+                    for r_apdb in rows_apdb: 
+                        d = dict(r_apdb)
+                        # Pretty print history for readability
+                        print(f"Student: {d.get('student_email')}, Problem ID: {d.get('problem_id')}, Level Idx: {d.get('problem_level_index')}")
+                        print(f"  History:\n{d.get('conversation_history', '')}")
+            except Exception as e_apdb: print(f"Fel vid utskrift av active_problems: {e_apdb}")
+            finally: 
+                if conn_apdb: conn_apdb.close()
+            print("--- SLUT DB UTSKRIFT ---")
+        print_db_content()
+        exit()
+    # --- End DB Print Option ---
 
     if RUN_EMAIL_BOT:
         logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
         if not OLLAMA_MODEL: logging.critical("Saknar OLLAMA_MODEL."); exit(1)
-        # Dynamically import ollama only if in bot mode
         try:
-            import ollama as ollama_module
-            globals()['ollama'] = ollama_module # Make it available globally if imported
-            logging.info(f"Kontrollerar Ollama och modell '{OLLAMA_MODEL}'...")
+            import ollama as ollama_module; globals()['ollama'] = ollama_module
+            logging.info(f"Kontrollerar Ollama & modell '{OLLAMA_MODEL}'...")
             ollama.show(OLLAMA_MODEL, **ollama_client_args)
-            logging.info(f"Ansluten till Ollama och modell '{OLLAMA_MODEL}' hittad.")
-        except ImportError:
-            logging.critical("Ollama-biblioteket kunde inte importeras. Installera det (`pip install ollama`).")
-            exit("FEL: Ollama-biblioteket saknas.")
-        except Exception as ollama_err:
-            logging.critical(f"Ollama Fel: {ollama_err}"); exit("FEL: Ollama-anslutning/-modell misslyckades.")
+            logging.info(f"Ansluten till Ollama & modell '{OLLAMA_MODEL}' hittad.")
+        except ImportError: logging.critical("Ollama-bibliotek saknas."); exit("FEL: Ollama saknas.")
+        except Exception as ollama_err: logging.critical(f"Ollama Fel: {ollama_err}"); exit("FEL: Ollama-anslutning/-modell.")
 
         if not get_graph_token(): logging.critical("Misslyckades hämta Graph API-token."); exit(1)
-        logging.info("Startar huvudloop för Graph e-postkontroll...")
+        logging.info("Startar huvudloop för e-postkontroll...")
         while True:
             try: graph_check_emails()
             except Exception as loop_err:
@@ -598,39 +503,30 @@ if __name__ == "__main__":
         logging.info(f"--- Kör i Enkelt E-postläsningsläge (Graph API) ---")
         if not get_graph_token(): logging.critical("Misslyckades hämta Graph API-token."); exit(1)
         try:
-            select_fields_readonly = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
-            params_readonly = {"$filter": "isRead eq false", "$select": select_fields_readonly, "$orderby": "receivedDateTime asc"} # Oldest first
-            endpoint_readonly = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
+            select_fields_ro = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
+            params_ro = {"$filter": "isRead eq false", "$select": select_fields_ro, "$orderby": "receivedDateTime asc"}
+            endpoint_ro = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
             print("\n--- Kontrollerar olästa e-postmeddelanden (läs-läge) ---")
-            response_data = make_graph_api_call("GET", endpoint_readonly, params=params_readonly)
+            response_data = make_graph_api_call("GET", endpoint_ro, params=params_ro)
             if not response_data or "value" not in response_data:
                 if response_data is None: print("Fel vid hämtning av e-post.")
                 else: print("Inga olästa e-postmeddelanden.")
             else:
-                unread_messages = response_data["value"]
-                if not unread_messages: print("Inga olästa e-postmeddelanden.")
+                unread = response_data["value"]
+                if not unread: print("Inga olästa e-postmeddelanden.")
                 else:
-                    print(f"Hittade {len(unread_messages)} olästa e-postmeddelanden:")
-                    for i, msg_graph in enumerate(unread_messages):
-                        print(f"\n--- E-post {i+1}/{len(unread_messages)} ---")
-                        sender_info = msg_graph.get('from') or msg_graph.get('sender')
-                        sender_email = sender_info.get('emailAddress', {}).get('address', '') if sender_info else 'Okänd'
-                        print(f"  Från: {sender_email}")
-                        print(f"  Ämne: {msg_graph.get('subject', '[Inget ämne]')}")
-                        
-                        email_body_graph_obj_ro = msg_graph.get('body', {})
-                        email_body_content_ro = email_body_graph_obj_ro.get('content', '')
-                        raw_body_for_display = ""
-                        if email_body_graph_obj_ro.get('contentType', '').lower() == 'html':
-                            soup_ro = BeautifulSoup(email_body_content_ro, "html.parser")
-                            raw_body_for_display = soup_ro.get_text(separator='\n').strip()
-                        else: raw_body_for_display = email_body_content_ro
-                        
-                        cleaned_body_for_display = clean_email_body(raw_body_for_display, TARGET_USER_GRAPH_ID)
-                        print(f"  Rensad Text:\n{'-'*20}\n{cleaned_body_for_display if cleaned_body_for_display else msg_graph.get('bodyPreview', '[Tom eller ingen text]')}\n{'-'*20}")
-                        mark_email_as_read(msg_graph.get('id'))
-                    print("\nAlla olästa e-postmeddelanden listade och markerade som lästa.")
-        except Exception as readonly_err:
-            logging.error(f"Fel i läs-läge: {readonly_err}", exc_info=True)
+                    print(f"Hittade {len(unread)} olästa e-postmeddelanden:")
+                    for i, msg in enumerate(unread):
+                        print(f"\n--- E-post {i+1}/{len(unread)} ---")
+                        sender_info = msg.get('from') or msg.get('sender')
+                        sender_email = sender_info.get('emailAddress',{}).get('address','') if sender_info else 'Okänd'
+                        print(f"  Från: {sender_email}\n  Ämne: {msg.get('subject','[Inget ämne]')}")
+                        body_obj_ro = msg.get('body',{}); body_content_ro = body_obj_ro.get('content','')
+                        raw_body_ro = BeautifulSoup(body_content_ro,"html.parser").get_text(separator='\n').strip() if body_obj_ro.get('contentType','').lower()=='html' else body_content_ro
+                        cleaned_ro = clean_email_body(raw_body_ro, TARGET_USER_GRAPH_ID)
+                        print(f"  Rensad Text:\n{'-'*20}\n{cleaned_ro if cleaned_ro else msg.get('bodyPreview','[Tom]')}\n{'-'*20}")
+                        mark_email_as_read(msg.get('id'))
+                    print("\nAlla olästa markerade som lästa.")
+        except Exception as ro_err: logging.error(f"Fel i läs-läge: {ro_err}", exc_info=True)
         logging.info("--- Avslutade Enkelt E-postläsningsläge ---")
     logging.info("Script avslutat.")
