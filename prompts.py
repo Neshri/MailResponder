@@ -15,27 +15,50 @@ Håll dina svar relativt korta och konverserande, som ett riktigt e-postmeddelan
 
 PROBLEM_KATALOG = [
     {
-        "id": "P001",
-        "beskrivning": "Min 'klicker' (musen) hoppar inte fram när jag rör den. Den lilla röda lampan under lyser inte alls.",
-        "losning_nyckelord": ["byt batteri", "byta batterier", "ladda musen"],
-        "start_prompt": "Kära nån, nu har klickern gett upp helt! Den är alldeles död och den lilla lampan under är släckt. Jag kan inte klicka på någonting på fönsterskärmen. Vad ska jag ta mig till?"
+        "id": "S001", # Changed ID prefix for "Subtle"
+        "beskrivning": "Trådlös mus fungerar inte; batteriet är slut.", # Precise technical description (for your reference)
+        "losning_nyckelord": ["batteri", "ladda", "ström till musen"], # Slightly broader, focuses on power
+        "start_prompt": "Men kära nån, nu har den där lilla saken jag pekar med på skärmen slutat fungera igen! Den är helt tyst och stilla. Jag bytte ju den där lilla glaspinnen i den för inte så länge sen, trodde jag. Kanske den är ledsen på mig?"
+        # Subtle hints: "tyst och stilla" (no light, no movement). "Glaspinnen" is Ulla's term for battery.
+        # "Inte så länge sen" could be a misremembering, common for battery issues.
     },
     {
-        "id": "P002",
-        "beskrivning": "Det är katthår i sensorn under 'klickern' (musen), vilket gör att pekaren hoppar och far oberäkneligt på skärmen.",
-        "losning_nyckelord": ["rengör sensorn", "blås bort håret", "ta bort skräpet under"],
-        "start_prompt": "Hjälp! Min klicker har blivit alldeles tokig! Pekaren på skärmen hoppar som en skållad råtta. Jag tittade under och det ser ut som Måns har fällt lite hår där igen... Hur får jag bort det?"
+        "id": "S002",
+        "beskrivning": "Optisk mus beter sig oberäkneligt på grund av smuts/hår på sensorn.", # Precise
+        "losning_nyckelord": ["smuts under", "rengöra linsen", "hår ivägen", "blåsa rent"], # Focus on obstruction
+        "start_prompt": "Hjälp mig snälla! När jag försöker klicka på mina kortspel på datorn så far pilen runt som en yr höna! Ibland stannar den, ibland hoppar den till ett helt annat ställe. Det är som den har fått ett eget liv! Måns låg just på skrivbordet, men han är ju så renlig av sig..."
+        # Subtle hints: "yr höna" implies erratic movement. Mentioning Måns is a slight, indirect clue to pet hair.
+        # Focuses on the effect (cursor movement) more than Ulla inspecting the mouse directly.
     },
     {
-        "id": "P003",
-        "beskrivning": "Internetlådan (routern) har en fast orange lampa istället för en blinkande grön. Internet fungerar inte.",
-        "losning_nyckelord": ["starta om routern", "dra ut strömsladden", "vänta", "sätt i sladden igen"],
-        "start_prompt": "Nej men nu är det väl ändå typiskt! Hela internet har försvunnit. Den där lilla internetlådan lyser bara med ett envist orange sken, den brukar ju blinka så glatt i grönt. Hur ska jag nu kunna läsa tidningen på plattan?"
+        "id": "S003",
+        "beskrivning": "Router har ingen internetanslutning (t.ex. WAN-problem, ISP-problem, fast orange lampa).", # Precise
+        "losning_nyckelord": ["internetlådan", "starta om", "kontakta leverantören", "ingen anslutning", "lampan lyser konstigt"], # Broader keywords
+        "start_prompt": "Stackars mig, nu har hela vida världen försvunnit från min läsplatta! Jag skulle just läsa om kungafamiljen, men det står bara att den inte kan hitta något. Den där lilla lådan som ger mig internet står bara och surar med ett konstigt sken, inte alls som den brukar. Kanske den är trött?"
+        # Subtle hints: "inte kan hitta något" (no connection). "Konstigt sken" is vaguer than "fast orange".
+        # "Surar" and "trött" are Ulla's personifications.
     },
     {
-        "id": "P004",
-        "beskrivning": "Fönsterskärmen (bildskärmen) är helt svart, men datorlådan låter som vanligt. Strömkabeln till skärmen sitter i väggen.",
-        "losning_nyckelord": ["kontrollera skärmkabeln", "tryck på skärmens strömknapp", "sitter kabeln fast", "växla ingångskälla"],
-        "start_prompt": "Men kära nån, nu blev allt svart på fönsterskärmen! Datorlådan brummar på som vanligt, men skärmen är helt mörk. Jag har känt på sladden som går in i väggen, den sitter där. Har jag kommit åt någon knapp?"
+        "id": "S004",
+        "beskrivning": "Bildskärmen är inte påslagen eller ingen signalkabel är korrekt ansluten (eller fel ingång vald).", # Precise
+        "losning_nyckelord": ["skärmen ström", "kabel till skärmen", "tryck på knappen", "annan ingång", "ingen bild"], # Keywords related to screen power/signal
+        "start_prompt": "Åh, elände! Jag skulle just titta på mina foton från semestern, men hela fönstret på datorn är alldeles mörkt. Datorlådan själv verkar brumma på som vanligt, jag hör den. Men inte ett knyst från skärmen. Har den gått och lagt sig mitt på dagen?"
+        # Subtle hints: "mörkt fönster" but "datorlådan brummar" (PC on, monitor issue).
+        # "Gått och lagt sig" implies no power or signal. Doesn't mention checking cables.
+    },
+    {
+        "id": "S005", # New problem example
+        "beskrivning": "Ljudet fungerar inte på datorn; högtalarna kan vara avstängda, urkopplade, eller ljudet är satt på ljudlös (mute).",
+        "losning_nyckelord": ["inget ljud", "högtalare", "volym", "ljudlös", "kabel till ljud"],
+        "start_prompt": "Men för all del! Jag skulle just lyssna på P4 på datorn som barnbarnet visade, men det är knäpptyst! Alla de där fina melodierna är borta. Jag har provat att vifta med klickern överallt på skärmen men det hjälper inte. Är det fel på mina öron idag, tro?"
+        # Subtle hints: "knäpptyst". "Vifta med klickern" (trying to click volume icons, perhaps).
+        # Misdirection: "fel på mina öron".
+    },
+    {
+        "id": "S006", # New problem example
+        "beskrivning": "Tangentbordet skriver fel tecken eller inga alls (t.ex. NumLock på, fel språklayout, smuts under tangenter, dålig anslutning för trådlöst).",
+        "losning_nyckelord": ["tangentbord", "fel tecken", "skriver inte", "num lock", "språkinställning", "rengöra tangentbordet"],
+        "start_prompt": "Nu är det väl ändå förargligt! När jag försöker skriva ett brev till min väninna Agda så blir bokstäverna alldeles konstiga, eller så kommer det inga alls! Ibland blir det bara siffror fast jag trycker på bokstäver. Har apparaten fått solsting?"
+        # Subtle hints: "konstiga bokstäver" (layout?), "siffror fast jag trycker på bokstäver" (NumLock on a compact keyboard).
     }
 ]
