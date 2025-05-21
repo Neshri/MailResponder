@@ -319,8 +319,7 @@ def graph_check_emails():
     response_data = make_graph_api_call("GET", endpoint, params=params)
 
     if not response_data or "value" not in response_data:
-        if response_data is None: logging.warning("Ingen data/fel från Graph.")
-        else: logging.info("Inga olästa e-post (Graph).")
+        logging.info("Inga olästa e-post eller fel vid hämtning." if response_data is None else "Inga olästa e-post (Graph).")
         return
 
     unread_messages = response_data["value"]
@@ -332,67 +331,99 @@ def graph_check_emails():
         graph_msg_id = msg_graph.get('id')
         logging.info(f"--- Bearbetar e-post ID: {graph_msg_id} ---")
         try:
-            subject = msg_graph.get('subject', "")
+            subject_from_email = msg_graph.get('subject', "")
             sender_info = msg_graph.get('from') or msg_graph.get('sender')
             sender_email = sender_info.get('emailAddress', {}).get('address', '').lower() if sender_info else ''
-            inet_msg_id = msg_graph.get('internetMessageId')
-            graph_convo_id_in = msg_graph.get('conversationId')
-            refs_header = next((h.get('value') for h in msg_graph.get('internetMessageHeaders', []) if h.get('name', '').lower() == 'references'), None)
-            logging.info(f"Från: {sender_email} | Ämne: '{subject}'")
+            internet_message_id = msg_graph.get('internetMessageId') # For threading replies
+            graph_conversation_id_incoming = msg_graph.get('conversationId') # For threading and DB
+            references_header_value = next((h.get('value') for h in msg_graph.get('internetMessageHeaders', []) if h.get('name', '').lower() == 'references'), None)
+            
+            logging.info(f"Från: {sender_email} | Ämne: '{subject_from_email}'")
 
             if not sender_email or sender_email == TARGET_USER_GRAPH_ID.lower() or 'mailer-daemon' in sender_email or 'noreply' in sender_email:
                 logging.warning("Skippar (själv/system). Markerar läst."); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
 
             body_obj = msg_graph.get('body', {}); body_content = body_obj.get('content', '')
-            raw_body = BeautifulSoup(body_content, "html.parser").get_text(separator='\n').strip() if body_obj.get('contentType','').lower()=='html' else body_content
-            cleaned_body = clean_email_body(raw_body, TARGET_USER_GRAPH_ID)
+            raw_body_for_cleaning = BeautifulSoup(body_content, "html.parser").get_text(separator='\n').strip() if body_obj.get('contentType','').lower()=='html' else body_content
+            cleaned_body = clean_email_body(raw_body_for_cleaning, TARGET_USER_GRAPH_ID)
             logging.debug(f"Rensad text: '{cleaned_body[:100]}...'")
 
-            student_level_idx, last_active_convo_id_progress = get_student_progress(sender_email)
+            # --- REVISED LOGIC FOR START COMMANDS AND ACTIVE CONVERSATIONS ---
+            student_next_eligible_level_idx, _ = get_student_progress(sender_email) # What level are they eligible to START?
             active_hist_str, active_problem_info, active_problem_level_idx, active_problem_convo_id_db = get_current_active_problem(sender_email)
-            
-            is_valid_start_command = False
-            triggered_start_phrase_for_level = None
 
+            is_start_command_for_eligible_level = False
+            attempted_start_level_idx = -1 # Level index the student is trying to start
+
+            # Check if the incoming email is trying to start ANY known level
             for idx, phrase in enumerate(START_PHRASES):
-                # Check if student is AT this level to start it
-                if idx == student_level_idx: 
-                    if (subject and phrase.lower() in subject.lower()) or \
-                       (cleaned_body.lower().strip().startswith(phrase.lower())):
-                        is_valid_start_command = True
-                        triggered_start_phrase_for_level = phrase
-                        logging.info(f"Giltigt startkommando '{phrase}' för nivå {idx+1} från {sender_email}.")
-                        break
-                # Allow restarting a level they are on, or starting their next level
-                # This means if they are on level 0, they can use phrase for level 0.
-                # If they are on level 1 (meaning they completed level 0), they can use phrase for level 1.
+                if (subject_from_email and phrase.lower() in subject_from_email.lower()) or \
+                   (cleaned_body.lower().strip().startswith(phrase.lower())):
+                    attempted_start_level_idx = idx
+                    logging.info(f"Mail från {sender_email} innehåller startfras '{phrase}' för nivå {idx + 1}.")
+                    break
+            
+            # Scenario 1: Student is trying to start a level
+            if attempted_start_level_idx != -1:
+                # Is it the level they are actually eligible for?
+                if attempted_start_level_idx == student_next_eligible_level_idx:
+                    is_start_command_for_eligible_level = True
+                    logging.info(f"Detta är en giltig start för nivå {student_next_eligible_level_idx + 1}.")
+                else:
+                    # They used a start phrase, but not for their current eligible level.
+                    # Could be for a past level (restart attempt) or future level (too early).
+                    # For now, if they have an active problem, we ignore this out-of-sync start command
+                    # and process the email as a reply to the active problem IF one exists.
+                    # If no active problem, we could inform them they used the wrong phrase.
+                    if not active_problem_info: # No active problem, but wrong start phrase
+                        logging.warning(f"Student {sender_email} använde startfras för nivå {attempted_start_level_idx + 1}, men förväntad nästa nivå är {student_next_eligible_level_idx + 1}. Informerar studenten.")
+                        wrong_level_msg = f"Hej! Jag ser att du försöker starta en övning, men startfrasen du använde verkar vara för en annan nivå. "
+                        if student_next_eligible_level_idx < NUM_LEVELS:
+                            wrong_level_msg += f"Om du vill starta nästa övning (Nivå {student_next_eligible_level_idx + 1}), använd frasen: \"{START_PHRASES[student_next_eligible_level_idx]}\"."
+                        else:
+                            wrong_level_msg += "Du verkar ha klarat alla tillgängliga nivåer redan!"
+                        
+                        reply_subject_wrong_level = subject_from_email # Keep their subject or "Re:" it
+                        if not reply_subject_wrong_level.lower().startswith("re:"): reply_subject_wrong_level = f"Re: {subject_from_email}"
 
-            if is_valid_start_command:
-                if student_level_idx >= NUM_LEVELS:
-                    logging.info(f"Student {sender_email} har redan klarat alla {NUM_LEVELS} nivåer.")
+                        graph_send_email(sender_email, reply_subject_wrong_level, wrong_level_msg,
+                                         in_reply_to_message_id=internet_message_id,
+                                         references_header_str=f"{references_header_value if references_header_value else ''} {internet_message_id}".strip(),
+                                         conversation_id=graph_conversation_id_incoming)
+                        mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue # Move to next email
+
+            # Decision Point:
+            if is_start_command_for_eligible_level:
+                # This will REPLACE any current active_problem for the student, which is the desired override.
+                if student_next_eligible_level_idx >= NUM_LEVELS:
+                    logging.info(f"Student {sender_email} försöker starta nivå men har redan klarat alla {NUM_LEVELS} nivåer.")
                     # Optionally send a "Congrats, you're done!" email
                     mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
 
-                problem_list = PROBLEM_CATALOGUES[student_level_idx]
-                if not problem_list: logging.error(f"Inga problem för nivå {student_level_idx+1}!"); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
+                problem_list = PROBLEM_CATALOGUES[student_next_eligible_level_idx]
+                if not problem_list: logging.error(f"Inga problem för nivå {student_next_eligible_level_idx+1}!"); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
                 
                 problem = random.choice(problem_list)
-                if set_active_problem(sender_email, problem, student_level_idx, graph_convo_id_in):
-                    reply_subject = subject if START_PHRASES[student_level_idx].lower() in subject.lower() else f"Övning Nivå {student_level_idx + 1}"
-                    if graph_send_email(sender_email, reply_subject, problem['start_prompt'], conversation_id=graph_convo_id_in):
-                        logging.info(f"Skickade problem (Nivå {student_level_idx+1}) till {sender_email}")
+                if set_active_problem(sender_email, problem, student_next_eligible_level_idx, graph_conversation_id_incoming):
+                    # Ulla's reply subject should be based on the student's triggering email's subject
+                    reply_subject = subject_from_email # Or f"Övning Nivå {student_next_eligible_level_idx + 1}"
+                    
+                    if graph_send_email(sender_email, reply_subject, problem['start_prompt'], conversation_id=graph_conversation_id_incoming):
+                        logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {sender_email}")
                         mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id)
-                    else: logging.error("Misslyckades skicka initialt problem."); clear_active_problem(sender_email) # Rollback
-                else: logging.error("Misslyckades sätta aktivt problem i DB.")
+                    else: 
+                        logging.error("Misslyckades skicka initialt problem efter startkommando."); 
+                        clear_active_problem(sender_email) # Rollback if Ulla's first mail fails
+                else: logging.error("Misslyckades sätta aktivt problem i DB efter startkommando.")
             
-            elif active_hist_str and active_problem_info: # Active problem, not a start command
+            elif active_hist_str and active_problem_info: # An active problem exists, AND the current email was NOT a valid start command for their next level
                 logging.info(f"E-post tillhör aktivt problem {active_problem_info['id']} för {sender_email}")
                 body_for_llm = cleaned_body if cleaned_body.strip() else (msg_graph.get('bodyPreview') or "").strip()
                 if not body_for_llm:
-                    logging.warning("Tom text/förhandsvisning. Ignorerar. Markerar läst."); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
+                    logging.warning("Tom text/förhandsvisning för aktivt problem. Ignorerar. Markerar läst."); mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id); continue
                 
                 student_entry = f"Support: {body_for_llm}\n\n"
-                append_to_active_problem_history(sender_email, student_entry) # Add student's msg
+                append_to_active_problem_history(sender_email, student_entry)
                 full_hist_for_llm = active_hist_str + student_entry
 
                 ulla_reply_body, is_solved = get_llm_response_with_history(sender_email, full_hist_for_llm, active_problem_info, body_for_llm)
@@ -400,24 +431,24 @@ def graph_check_emails():
                 if ulla_reply_body:
                     final_ulla_reply = ulla_reply_body
                     if is_solved:
-                        next_lvl_idx = active_problem_level_idx + 1
+                        # Use active_problem_level_idx here as it's the level they just COMPLETED
+                        next_lvl_idx_after_solve = active_problem_level_idx + 1
                         completion_msg = f"\n\nJättebra! Problem {active_problem_info['id']} (Nivå {active_problem_level_idx + 1}) är löst!"
-                        if next_lvl_idx < NUM_LEVELS:
-                            completion_msg += f"\nStartfras för nästa nivå ({next_lvl_idx + 1}): \"{START_PHRASES[next_lvl_idx]}\""
+                        if next_lvl_idx_after_solve < NUM_LEVELS:
+                            completion_msg += f"\nStartfras för nästa nivå ({next_lvl_idx_after_solve + 1}): \"{START_PHRASES[next_lvl_idx_after_solve]}\""
                         else: completion_msg += "\nDu har klarat alla nivåer! Grattis!"
                         final_ulla_reply += completion_msg
                     
-                    ulla_entry_for_db = f"Ulla: {final_ulla_reply}\n\n" # Use potentially augmented reply for DB
+                    ulla_entry_for_db = f"Ulla: {final_ulla_reply}\n\n"
                     
-                    reply_subj = subject if not subject.lower().startswith("re:") else subject
-                    if not reply_subj.lower().startswith("re:"): reply_subj = f"Re: {subject}"
+                    reply_subj_ongoing = subject_from_email
+                    if not reply_subj_ongoing.lower().startswith("re:"): reply_subj_ongoing = f"Re: {subject_from_email}"
                     
-                    # Use graph_convo_id_in from current email or fallback to stored one for this problem
-                    convo_id_for_reply = graph_convo_id_in or active_problem_convo_id_db
-                    refs_for_reply = f"{refs_header if refs_header else ''} {inet_msg_id}".strip()
+                    convo_id_for_reply = graph_conversation_id_incoming or active_problem_convo_id_db
+                    refs_for_reply = f"{references_header_value if references_header_value else ''} {internet_message_id}".strip()
 
-                    if graph_send_email(sender_email, reply_subj, final_ulla_reply, inet_msg_id, refs_for_reply, convo_id_for_reply):
-                        append_to_active_problem_history(sender_email, ulla_entry_for_db) # Add Ulla's full reply
+                    if graph_send_email(sender_email, reply_subj_ongoing, final_ulla_reply, internet_message_id, refs_for_reply, convo_id_for_reply):
+                        append_to_active_problem_history(sender_email, ulla_entry_for_db)
                         if is_solved:
                             clear_active_problem(sender_email)
                             update_student_level(sender_email, active_problem_level_idx + 1, active_problem_info['id'])
@@ -426,7 +457,7 @@ def graph_check_emails():
                     else: logging.error("Misslyckades skicka svar. E-post INTE markerad som läst.")
                 else: logging.error("Misslyckades få LLM-svar. E-post INTE markerad som läst.")
             
-            else: # No active problem & not a valid start command for their level
+            else: # No active problem AND not a valid start command for their eligible level
                 logging.warning(f"E-post från {sender_email} - inget aktivt problem/giltigt startkommando. Ignorerar. Markerar läst.")
                 mark_email_as_read(graph_msg_id); processed_ids.add(graph_msg_id)
         

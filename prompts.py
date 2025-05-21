@@ -3,7 +3,7 @@
 # --- START PHRASES PER LEVEL ---
 # Level 0 is the entry point (index for list access)
 START_PHRASES = [
-    "starta övning nivå 1", # Level 1 (index 0)
+    "starta övning", # Level 1 (index 0)
     "utmaning nivå 2",     # Level 2 (index 1)
     "expertläge nivå 3",    # Level 3 (index 2)
     "mästarprov nivå 4",    # Level 4 (index 3)
