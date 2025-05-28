@@ -345,7 +345,7 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         response = ollama.chat(
             model=EVAL_MODEL, # Changed
             messages=messages_for_evaluator,
-            options={'temperature': 0.1, 'num_predict': 500, "num_thread": 20},
+            options={'temperature': 0.1, 'num_predict': 500, "num_thread": 12},
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
@@ -413,7 +413,7 @@ Ditt nuvarande tekniska problem är: "{problem_info_for_ulla['beskrivning']}"
         response = ollama.chat(
             model=PERSONA_MODEL, # Changed
             messages=messages_for_ulla,
-            options={'temperature': 0.75, 'num_predict': 1000, 'num_thread': 20}, # Higher temp for more natural Ulla
+            options={'temperature': 0.75, 'num_predict': 1000, 'num_thread': 12}, # Higher temp for more natural Ulla
             **ollama_client_args
         )
         ulla_svar = response['message']['content'].strip()
@@ -614,7 +614,7 @@ def graph_check_emails():
     llm_results_from_threads = [] 
     if llm_tasks_to_submit:
         logging.info(f"Skickar {len(llm_tasks_to_submit)} uppgifter till LLM trådpool...")
-        with ThreadPoolExecutor(max_workers=3) as executor: 
+        with ThreadPoolExecutor(max_workers=2) as executor: 
             future_to_task_package = { 
                 executor.submit(
                     _llm_evaluation_and_reply_task, 
