@@ -345,7 +345,7 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         response = ollama.chat(
             model=EVAL_MODEL, # Changed
             messages=messages_for_evaluator,
-            options={'temperature': 0.1, 'num_predict': 500, 'stop': ["<end_of_turn>"]},
+            options={'temperature': 0.1, 'num_predict': 500, "num_thread": 20},
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
@@ -413,7 +413,7 @@ Ditt nuvarande tekniska problem är: "{problem_info_for_ulla['beskrivning']}"
         response = ollama.chat(
             model=PERSONA_MODEL, # Changed
             messages=messages_for_ulla,
-            options={'temperature': 0.75, 'num_predict': 1000, 'stop': ["<end_of_turn>"]}, # Higher temp for more natural Ulla
+            options={'temperature': 0.75, 'num_predict': 1000, 'num_thread': 20}, # Higher temp for more natural Ulla
             **ollama_client_args
         )
         ulla_svar = response['message']['content'].strip()
