@@ -312,7 +312,7 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']}")
             return True
         else:
-            logging.error("Misslyckades skicka initialt problem för ny nivå.");
+            logging.error("Misslyckades skicka initialt problem för ny nivå.")
             clear_active_problem(email_data["sender_email"]) 
             return False
     else:
@@ -333,7 +333,7 @@ def get_evaluator_decision(student_email, problem_description, solution_keywords
 
     # System prompt for the evaluator is very direct
     evaluator_prompt_content = f"""Tekniskt Problem: "{problem_description}"
-Korrekta Lösningsnyckelord: {solution_keywords}
+Korrekta Lösningar/lösningsnyckelord: {solution_keywords}
 Studentens SENASTE Meddelande:
 ---
 {latest_student_message_cleaned}
