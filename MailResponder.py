@@ -43,7 +43,6 @@ ollama_client_args = {}
 if OLLAMA_HOST: ollama_client_args['host'] = OLLAMA_HOST; logging.info(f"Ollama-klient: {OLLAMA_HOST}")
 
 DB_FILE = 'conversations.db' 
-RUN_EMAIL_BOT = True 
 
 GRAPH_API_ENDPOINT = 'https://graph.microsoft.com/v1.0'
 GRAPH_SCOPES = ['https://graph.microsoft.com/.default']
@@ -222,21 +221,30 @@ def jwt_is_expired(token_str):
     try: payload_str = token_str.split('.')[1]; payload_str += '=' * (-len(payload_str) % 4); payload = json.loads(base64.urlsafe_b64decode(payload_str).decode()); return payload.get('exp', 0) < time.time()
     except Exception: return True
 
-def make_graph_api_call(method, endpoint_suffix, data=None, params=None, headers_extra=None):
+def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers_extra=None): # Parameter name changed
     global ACCESS_TOKEN
     if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
         logging.info("Token saknas/utgånget i make_graph_api_call, försöker förnya.")
         if not get_graph_token(): logging.error("Misslyckades förnya token."); return None
-    if ACCESS_TOKEN is None: logging.error("ACCESS_TOKEN fortfarande None."); return None # Should be caught by above
-    headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}; url = f"{GRAPH_API_ENDPOINT}{endpoint_suffix}"
+    if ACCESS_TOKEN is None: logging.error("ACCESS_TOKEN fortfarande None."); return None
+
+    headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}
     if headers_extra: headers.update(headers_extra)
+
+    # Determine if endpoint_or_url is a full URL or a suffix
+    if endpoint_or_url.startswith("https://") or endpoint_or_url.startswith("http://"):
+        url = endpoint_or_url
+    else:
+        url = f"{GRAPH_API_ENDPOINT}{endpoint_or_url}"
+    
     try:
-        response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30); response.raise_for_status()
-        if response.status_code in [202, 204]: return True
+        response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
+        response.raise_for_status()
+        if response.status_code in [202, 204]: return True # 204 is typical for successful DELETE
         return response.json()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401: logging.warning("Graph API 401. Ogiltigförklarar token."); ACCESS_TOKEN = None
-        err_details = "Okänt." ; 
+        err_details = "Okänt."
         try: err_details = e.response.json().get("error", {}).get("message", e.response.text)
         except json.JSONDecodeError: err_details = e.response.text
         logging.error(f"Graph HTTP-fel: {e.response.status_code} - {err_details} ({method} {url})"); return None
@@ -762,15 +770,90 @@ def graph_check_emails():
         final_processed_count = len(processed_ids_in_phase1) 
         logging.info(f"Avslutade e-postbearbetning. {final_processed_count} av {len(unread_messages_raw)} e-postmeddelanden hanterades denna cykel.")
 
+
+def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH_ID):
+    """
+    Deletes all emails in the inbox for the specified user.
+    Handles pagination to retrieve all message IDs before deleting.
+    """
+    logging.info(f"Attempting to delete all emails in inbox for {user_principal_name_or_id}...")
+    global ACCESS_TOKEN
+    if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
+        logging.info("Token for delete operation missing/expired, attempting to refresh.")
+        if not get_graph_token():
+            logging.error("Failed to refresh token. Cannot proceed with email deletion.")
+            return False
+
+    all_message_ids = []
+    # Initial endpoint to get messages from the inbox, requesting only 'id' and using $top for efficiency.
+    # Note: $top max value can vary, 100 is generally safe. Max is 1000 for messages.
+    current_request_url = f"/users/{user_principal_name_or_id}/mailFolders/inbox/messages?$select=id&$top=100"
+
+    logging.info("Fetching message IDs from inbox...")
+    page_count = 0
+    while current_request_url:
+        page_count += 1
+        logging.debug(f"Fetching page {page_count} of messages using URL: {current_request_url}")
+        # make_graph_api_call will handle if current_request_url is a full path or a suffix
+        response = make_graph_api_call("GET", current_request_url)
+
+        if not response or "value" not in response:
+            if response is None: # Indicates a request error
+                 logging.error(f"Failed to fetch messages (page {page_count}). Aborting further fetching.")
+            else: # Response received, but no 'value' field or empty 'value'
+                 logging.info(f"No 'value' in response or empty message list on page {page_count}. Assuming no more messages.")
+            break 
+
+        messages_page = response.get("value", [])
+        if not messages_page and page_count == 1 and not all_message_ids:
+             logging.info("Inbox is empty or no messages retrieved on the first page.")
+             return True # Considered success as inbox is effectively empty
+
+        for msg in messages_page:
+            if msg.get("id"):
+                all_message_ids.append(msg["id"])
+        
+        # Check for the next page link
+        current_request_url = response.get("@odata.nextLink") # This will be a full URL
+        if current_request_url:
+            logging.info(f"Fetching next page of messages... ({len(all_message_ids)} IDs collected so far)")
+        else:
+            logging.info(f"All message pages fetched. Total messages to delete: {len(all_message_ids)}")
+            break # No more pages
+
+    if not all_message_ids:
+        logging.info("No messages found in the inbox to delete.")
+        return True
+
+    logging.info(f"Proceeding to delete {len(all_message_ids)} messages...")
+    deleted_count = 0
+    failed_count = 0
+
+    for i, msg_id in enumerate(all_message_ids):
+        delete_endpoint_suffix = f"/users/{user_principal_name_or_id}/messages/{msg_id}"
+        # Consider adding a small delay if API throttling becomes an issue, e.g., time.sleep(0.05)
+        if make_graph_api_call("DELETE", delete_endpoint_suffix):
+            logging.debug(f"Successfully deleted message ID: {msg_id}")
+            deleted_count += 1
+        else:
+            logging.error(f"Failed to delete message ID: {msg_id}")
+            failed_count += 1
+        
+        if (i + 1) % 50 == 0 or (i + 1) == len(all_message_ids): # Log progress every 50 emails or at the end
+            logging.info(f"Deletion progress: {deleted_count} deleted, {failed_count} failed. ({i + 1}/{len(all_message_ids)} processed)")
+
+    logging.info(f"Email deletion process completed. Successfully deleted: {deleted_count}, Failed to delete: {failed_count}.")
+    return failed_count == 0
+
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    logging.info(f"Script startat (DB: {DB_FILE}). RUN_EMAIL_BOT={RUN_EMAIL_BOT}")
+    logging.info(f"Script startat (DB: {DB_FILE}).")
     try: init_db()
     except Exception as db_err: logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
 
     import sys
     if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
-        # ... (Your print_db_content function) ...
+        # ... (Your existing print_db_content function definition here) ...
         def print_db_content(): 
             conn_pdb = None; print("\n--- UTSKRIFT STUDENT PROGRESS ---")
             try:
@@ -798,63 +881,53 @@ if __name__ == "__main__":
             print("--- SLUT DB UTSKRIFT ---")
         print_db_content()
         exit()
-
-
-    if RUN_EMAIL_BOT:
-        logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
-        if not PERSONA_MODEL or not EVAL_MODEL: # Changed
-            logging.critical(f"Saknar PERSONA_MODEL ('{PERSONA_MODEL}') och/eller EVAL_MODEL ('{EVAL_MODEL}')."); exit(1) # Changed
-        try:
-            import ollama as ollama_module; globals()['ollama'] = ollama_module
-            logging.info(f"Kontrollerar Ollama & modeller: PERSONA_MODEL='{PERSONA_MODEL}', EVAL_MODEL='{EVAL_MODEL}'...") # Changed
-            ollama.show(PERSONA_MODEL, **ollama_client_args) # Check persona model existence
-            logging.info(f"Ansluten till Ollama & PERSONA_MODEL '{PERSONA_MODEL}' hittad.") # Changed
-            ollama.show(EVAL_MODEL, **ollama_client_args) # Check eval model existence
-            logging.info(f"Ansluten till Ollama & EVAL_MODEL '{EVAL_MODEL}' hittad.")     # Changed
-        except ImportError: logging.critical("Ollama-bibliotek saknas."); exit("FEL: Ollama saknas.")
-        except Exception as ollama_err: logging.critical(f"Ollama Fel: {ollama_err}"); exit("FEL: Ollama-anslutning/-modell.")
-
-        if not get_graph_token(): logging.critical("Misslyckades hämta Graph API-token."); exit(1) 
+    elif len(sys.argv) > 1 and sys.argv[1].lower() == "--emptyinbox":
+        logging.info("--- EMPTYING INBOX (via --emptyinbox command) ---")
+        if not TARGET_USER_GRAPH_ID: # Ensure critical config is present
+             logging.critical("TARGET_USER_GRAPH_ID is not set in .env. Cannot empty inbox.")
+             exit(1)
+        if not get_graph_token(): # Ensure token can be acquired
+            logging.critical("Failed to get Graph API token. Cannot empty inbox.")
+            exit(1)
         
-        logging.info("Startar huvudloop för e-postkontroll...")
-        while True:
-            try:
-                if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
-                    logging.info("Token saknas/utgånget före e-postkontroll, förnyar...")
-                    if not get_graph_token():
-                        logging.error("Misslyckades förnya token, väntar till nästa cykel.")
-                        time.sleep(60); continue 
-                graph_check_emails() 
-            except Exception as loop_err:
-                logging.error(f"Kritiskt fel i huvudloop: {loop_err}", exc_info=True)
-                if "401" in str(loop_err) or "token" in str(loop_err).lower():
-                    logging.warning("Ogiltigförklarar token pga fel i huvudloop."); ACCESS_TOKEN = None 
-            sleep_interval = 30
-            logging.info(f"Sover i {sleep_interval} sekunder..."); time.sleep(sleep_interval)
-    else: # RUN_EMAIL_BOT is False
-        logging.info(f"--- Kör i Enkelt E-postläsningsläge (Graph API) ---")
-        if not get_graph_token(): logging.critical("Misslyckades hämta Graph API-token."); exit(1)
+        # Call the function to delete emails
+        # (Ensure graph_delete_all_emails_in_inbox and modified make_graph_api_call are defined above)
+        success = graph_delete_all_emails_in_inbox() 
+        if success:
+            logging.info("Inbox emptying process reported success overall.")
+        else:
+            logging.warning("Inbox emptying process reported one or more failures during deletion.")
+        exit(0) # Exit after attempting to empty the inbox
+
+
+    logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
+    if not PERSONA_MODEL or not EVAL_MODEL: 
+        logging.critical(f"Saknar PERSONA_MODEL ('{PERSONA_MODEL}') och/eller EVAL_MODEL ('{EVAL_MODEL}')."); exit(1) 
+    try:
+        import ollama as ollama_module; globals()['ollama'] = ollama_module
+        logging.info(f"Kontrollerar Ollama & modeller: PERSONA_MODEL='{PERSONA_MODEL}', EVAL_MODEL='{EVAL_MODEL}'...") 
+        ollama.show(PERSONA_MODEL, **ollama_client_args) 
+        logging.info(f"Ansluten till Ollama & PERSONA_MODEL '{PERSONA_MODEL}' hittad.") 
+        ollama.show(EVAL_MODEL, **ollama_client_args) 
+        logging.info(f"Ansluten till Ollama & EVAL_MODEL '{EVAL_MODEL}' hittad.")     
+    except ImportError: logging.critical("Ollama-bibliotek saknas."); exit("FEL: Ollama saknas.")
+    except Exception as ollama_err: logging.critical(f"Ollama Fel: {ollama_err}"); exit("FEL: Ollama-anslutning/-modell.")
+
+    if not get_graph_token(): logging.critical("Misslyckades hämta Graph API-token."); exit(1) 
+    
+    logging.info("Startar huvudloop för e-postkontroll...")
+    while True:
         try:
-            select_fields_ro = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
-            params_ro = {"$filter": "isRead eq false", "$select": select_fields_ro, "$orderby": "receivedDateTime asc"}
-            endpoint_ro = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
-            print("\n--- Kontrollerar olästa e-postmeddelanden (läs-läge) ---")
-            response_data = make_graph_api_call("GET", endpoint_ro, params=params_ro) 
-            if not response_data or "value" not in response_data:
-                if response_data is None: print("Fel vid hämtning av e-post.")
-                else: print("Inga olästa e-postmeddelanden.")
-            else:
-                unread = response_data["value"]
-                if not unread: print("Inga olästa e-postmeddelanden.")
-                else:
-                    print(f"Hittade {len(unread)} olästa e-postmeddelanden:")
-                    for i, msg in enumerate(unread):
-                        email_details_ro = _parse_graph_email_item(msg) 
-                        print(f"\n--- E-post {i+1}/{len(unread)} ---")
-                        print(f"  Från: {email_details_ro['sender_email']}\n  Ämne: {email_details_ro['subject']}")
-                        print(f"  Rensad Text:\n{'-'*20}\n{email_details_ro['cleaned_body'] if email_details_ro['cleaned_body'] else email_details_ro.get('body_preview','[Tom]')}\n{'-'*20}")
-                        mark_email_as_read(email_details_ro['graph_msg_id']) 
-                    print("\nAlla olästa markerade som lästa.")
-        except Exception as ro_err: logging.error(f"Fel i läs-läge: {ro_err}", exc_info=True)
-        logging.info("--- Avslutade Enkelt E-postläsningsläge ---")
-    logging.info("Script avslutat.")
+            if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
+                logging.info("Token saknas/utgånget före e-postkontroll, förnyar...")
+                if not get_graph_token():
+                    logging.error("Misslyckades förnya token, väntar till nästa cykel.")
+                    time.sleep(60); continue 
+            graph_check_emails() 
+        except Exception as loop_err:
+            logging.error(f"Kritiskt fel i huvudloop: {loop_err}", exc_info=True)
+            if "401" in str(loop_err) or "token" in str(loop_err).lower():
+                logging.warning("Ogiltigförklarar token pga fel i huvudloop."); ACCESS_TOKEN = None 
+        sleep_interval = 30
+        logging.info(f"Sover i {sleep_interval} sekunder..."); time.sleep(sleep_interval)
+    
