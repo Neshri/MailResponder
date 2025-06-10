@@ -597,9 +597,16 @@ def graph_check_emails():
             body_for_llm_task = email_data["cleaned_body"] if email_data["cleaned_body"].strip() else (email_data.get('body_preview') or "").strip()
             if not body_for_llm_task:
                 logging.warning(f"Main: Tomt meddelande från {email_data['sender_email']} i svar på aktivt problem. Markerar som läst.")
-                mark_email_as_read(email_data["graph_msg_id"]); processed_ids_in_phase1.add(email_data["graph_msg_id"]); continue
+                mark_email_as_read(email_data["graph_msg_id"])
+                processed_ids_in_phase1.add(email_data["graph_msg_id"])
+                continue
             
             student_entry_for_db = f"Support: {body_for_llm_task}\n\n"
+            if active_hist_str.strip().endswith(student_entry_for_db.strip()):
+                logging.warning(f"Main: Meddelande {email_data['graph_msg_id']} från {email_data['sender_email']} verkar vara en dubblett. Ignorerar för att förhindra dubbel bearbetning.")
+                # We don't mark as read here. Let the next successful run do it.
+                # This prevents a state where a duplicate is ignored forever if the original process never finishes.
+                continue
             append_to_active_problem_history(email_data["sender_email"], student_entry_for_db)
             
             llm_tasks_to_submit.append({
