@@ -386,54 +386,61 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
     """
     Calls an LLM to generate Ulla's persona reply, conditioned on the evaluator's decision.
+    This version is heavily grounded and uses abstract, generic instructions to prevent context leakage and hardcoding.
     """
     global ollama
-    if not PERSONA_MODEL: # Changed
+    if not PERSONA_MODEL:
         logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt."); return "Glömde vad jag skulle säga..."
 
-    logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.") # Logging model used
+    logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    # System prompt for Ulla includes her persona and the current context.
-    # The history already contains the student's latest message.
-    ulla_system_context = f"""{ULLA_PERSONA_PROMPT}
-Du har haft följande konversation:
---- KONVERSATIONSHISTORIK ---
-{full_history_string_for_ulla}
---- SLUT KONVERSATIONSHISTORIK ---
+    problem_description_for_prompt = problem_info_for_ulla['beskrivning']
+    ulla_system_context = ULLA_PERSONA_PROMPT
 
-Ditt nuvarande tekniska problem är: "{problem_info_for_ulla['beskrivning']}"
-"""
-
-    # User prompt for Ulla tells her how to react based on the evaluator's decision.
     if evaluator_decision_marker == "[LÖST]":
-        ulla_task_prompt = """Studentens råd löste problemet. Svara som Ulla.
-1. Uttryck glädje.
-2. Beskriv det positiva resultatet (t.ex. "Nu kan jag se hela räkningen!").
-3. Avsluta konversationen."""
+        ulla_task_prompt = f"""
+        **Kontext - Din Problembeskrivning:**
+        ---
+        {problem_description_for_prompt}
+        ---
+        **Uppgift:** Studentens senaste meddelande LÖSTE problemet. Svara som Ulla.
+        
+        **Instruktioner:**
+        1.  Uttryck glädje och tacksamhet.
+        2.  Bekräfta att det fungerade genom att beskriva hur ett av de negativa symptomen från problembeskrivningen (ovan) nu är borta.
+        3.  Avsluta konversationen artigt.
+        """
     else: # "[EJ_LÖST]"
-        ulla_task_prompt = """Studentens råd löste inte problemet. Svara som Ulla.
-1. Bekräfta att du provade förslaget men att det inte hjälpte.
-2. Länka misslyckandet till ett kärnsymptom från problembeskrivningen (t.ex. "Sidan är fortfarande kritvit").
-3. Fortsätt konversationen."""
+        ulla_task_prompt = f"""
+        **Kontext - Din Problembeskrivning:**
+        ---
+        {problem_description_for_prompt}
+        ---
+        **Uppgift:** Studentens SENASTE meddelande är INTE en korrekt lösning. Svara som Ulla.
+        
+        **Instruktioner:**
+        1.  Analysera studentens senaste meddelande i konversationen.
+        2.  Om studenten gav ett **förslag**: Bekräfta artigt att du provade förslaget, men att det misslyckades.
+        3.  Om studenten ställde en **fråga**: Svara på frågan med hjälp av informationen från din problembeskrivning ovan.
+        4.  Oavsett föregående steg, måste du i ditt svar referera till ett specifikt, negativt kärnsymptom från **din problembeskrivning ovan** för att förklara varför problemet kvarstår.
+        5.  Använd **ENDAST** information från den problembeskrivning som angetts ovan. All annan information är irrelevant.
+        """
 
     messages_for_ulla = [
         {'role': 'system', 'content': ulla_system_context},
         {'role': 'user', 'content': ulla_task_prompt}
     ]
-    
-    # logging.debug(f"--- MEDDELANDE TILL ULLA PERSONA AI ({student_email}) ---\n{json.dumps(messages_for_ulla, indent=2, ensure_ascii=False)}\n--- SLUT ---")
 
     try:
         response = ollama.chat(
-            model=PERSONA_MODEL, # Changed
+            model=PERSONA_MODEL,
             messages=messages_for_ulla,
-            options={'temperature': 0.75, 'num_predict': 1000, 'num_thread': 24}, # Higher temp for more natural Ulla
+            options={'temperature': 0.7, 'num_predict': 1000, 'num_thread': 24}, # Slightly lower temp for more predictability
             **ollama_client_args
         )
         ulla_svar = response['message']['content'].strip()
         ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
-        ulla_svar = re.sub("</end_of_turn>", "", ulla_svar) # Remove the </end_of_turn> tag in gemma
-        # logging.debug(f"--- RÅTT SVAR FRÅN ULLA PERSONA AI ({student_email}) ---\n{ulla_svar}\n--- SLUT ---")
+        ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
         logging.info(f"Ulla Persona AI ({student_email}): Genererade svar: '{ulla_svar[:50]}...'")
         return ulla_svar
     except Exception as e:
