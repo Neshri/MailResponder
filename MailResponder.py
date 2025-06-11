@@ -385,8 +385,10 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla, 
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
     """
-    Calls an LLM to generate Ulla's persona reply, conditioned on the evaluator's decision.
-    This version is heavily grounded and uses abstract, generic instructions to prevent context leakage and hardcoding.
+    Calls an LLM to generate Ulla's persona reply.
+    This version uses the correct architecture:
+    - System Prompt: Contains persona rules AND the full conversation history for long-term context.
+    - User Prompt: Contains the immediate task, grounded with the problem description and the latest message.
     """
     global ollama
     if not PERSONA_MODEL:
@@ -395,35 +397,49 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
-    ulla_system_context = ULLA_PERSONA_PROMPT
+
+    # --- THIS IS THE CORRECTED PART: RE-INTRODUCING THE FULL HISTORY ---
+    # The system context now contains BOTH the persona rules AND the full conversation history.
+    ulla_system_context = f"""
+    {ULLA_PERSONA_PROMPT}
+
+    **Hittillsvarande Konversation:**
+    ---
+    {full_history_string_for_ulla}
+    ---
+    """
 
     if evaluator_decision_marker == "[LÖST]":
+        # The task prompt for success.
         ulla_task_prompt = f"""
-        **Kontext - Din Problembeskrivning:**
+        **Kontext - Ditt Problem:**
         ---
         {problem_description_for_prompt}
         ---
-        **Uppgift:** Studentens senaste meddelande LÖSTE problemet. Svara som Ulla.
+        **Uppgift:** Studenten löste precis problemet! Svara som Ulla.
         
         **Instruktioner:**
         1.  Uttryck glädje och tacksamhet.
-        2.  Bekräfta att det fungerade genom att beskriva hur ett av de negativa symptomen från problembeskrivningen (ovan) nu är borta.
+        2.  Bekräfta att det fungerade genom att beskriva hur ett av de negativa symptomen från din problembeskrivning (ovan) nu är borta.
         3.  Avsluta konversationen artigt.
         """
     else: # "[EJ_LÖST]"
+        # The task prompt for failure/continuation. It's focused and direct.
         ulla_task_prompt = f"""
-        **Kontext - Din Problembeskrivning:**
+        **Kontext - Ditt Problem (Ditt Minne):**
         ---
         {problem_description_for_prompt}
         ---
-        **Uppgift:** Studentens SENASTE meddelande är INTE en korrekt lösning. Svara som Ulla.
-        
+        **Kontext - Studentens SENASTE meddelande (som du ska svara på):**
+        ---
+        {latest_student_message_for_ulla}
+        ---
+        **Din Uppgift:** Svara på studentens senaste meddelande. Problemet är **INTE** löst.
+
         **Instruktioner:**
-        1.  Analysera studentens senaste meddelande i konversationen.
-        2.  Om studenten gav ett **förslag**: Bekräfta artigt att du provade förslaget, men att det misslyckades.
-        3.  Om studenten ställde en **fråga**: Svara på frågan med hjälp av informationen från din problembeskrivning ovan.
-        4.  Oavsett föregående steg, måste du i ditt svar referera till ett specifikt, negativt kärnsymptom från **din problembeskrivning ovan** för att förklara varför problemet kvarstår.
-        5.  Använd **ENDAST** information från den problembeskrivning som angetts ovan. All annan information är irrelevant.
+        1.  Ditt svar **MÅSTE** direkt adressera det studenten skrev i sitt meddelande.
+        2.  Använd information från "Ditt Problem (Ditt Minne)" för att formulera ditt svar.
+        3.  Eftersom problemet kvarstår, måste du nämna ett specifikt symptom från din problembeskrivning för att visa det.
         """
 
     messages_for_ulla = [
@@ -432,10 +448,11 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     ]
 
     try:
+        # (The rest of the function remains the same)
         response = ollama.chat(
             model=PERSONA_MODEL,
             messages=messages_for_ulla,
-            options={'temperature': 0.7, 'num_predict': 1000, 'num_thread': 24}, # Slightly lower temp for more predictability
+            options={'temperature': 0.7, 'num_predict': 1000, 'num_thread': 24},
             **ollama_client_args
         )
         ulla_svar = response['message']['content'].strip()
