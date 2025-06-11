@@ -406,9 +406,15 @@ Ditt nuvarande tekniska problem är: "{problem_info_for_ulla['beskrivning']}"
 
     # User prompt for Ulla tells her how to react based on the evaluator's decision.
     if evaluator_decision_marker == "[LÖST]":
-        ulla_task_prompt = "Studenten har precis gett ett råd som löste problemet! Svara som Ulla, uttryck glädje och tacksamhet. Bekräfta att det fungerade. Du kan sedan avsluta konversationen artigt."
+        ulla_task_prompt = """Studentens råd löste problemet. Svara som Ulla.
+1. Uttryck glädje.
+2. Beskriv det positiva resultatet (t.ex. "Nu kan jag se hela räkningen!").
+3. Avsluta konversationen."""
     else: # "[EJ_LÖST]"
-        ulla_task_prompt = "Studentens senaste råd löste tyvärr inte problemet. Svara som Ulla. Var artig, kanske lite förvirrad eller upprepa symptomen på ett Ulla-vis, men avslöja INTE den korrekta lösningen eller att du utvärderar studenten. Fortsätt konversationen."
+        ulla_task_prompt = """Studentens råd löste inte problemet. Svara som Ulla.
+1. Bekräfta att du provade förslaget men att det inte hjälpte.
+2. Länka misslyckandet till ett kärnsymptom från problembeskrivningen (t.ex. "Sidan är fortfarande kritvit").
+3. Fortsätt konversationen."""
 
     messages_for_ulla = [
         {'role': 'system', 'content': ulla_system_context},
