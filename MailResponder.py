@@ -407,13 +407,24 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
     
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla, 
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
+    """
+    Calls an LLM to generate Ulla's persona reply.
+    This version uses a structured prompt with a "story" and a "fact sheet" 
+    to improve the model's reliability in recalling specific details.
+    """
     global ollama
     if not PERSONA_MODEL:
         logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt."); return "Glömde vad jag skulle säga..."
 
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
+    # --- CHANGE: Extract both the narrative and the new technical facts ---
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
+    # Use .get() for safety in case a problem is missing the new key.
+    technical_facts_list = problem_info_for_ulla.get('tekniska_fakta', []) 
+    # --- END CHANGE ---
+
+    # The system context now contains BOTH the persona rules AND the full conversation history.
     ulla_system_context = f"""
     {ULLA_PERSONA_PROMPT}
 
@@ -424,6 +435,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     """
 
     if evaluator_decision_marker == "[LÖST]":
+        # The task prompt for success remains simple.
         ulla_task_prompt = f"""
         **Kontext - Ditt Problem:**
         ---
@@ -437,10 +449,18 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         3.  Avsluta konversationen artigt.
         """
     else: # "[EJ_LÖST]"
+        # --- CHANGE: Construct the new structured prompt for an ongoing problem ---
+        # Create a formatted string from the list of facts.
+        facts_string = "\n".join(f"- {fact}" for fact in technical_facts_list)
+
         ulla_task_prompt = f"""
-        **Kontext - Ditt Problem (Ditt Minne):**
+        **Kontext - Din Berättelse (Hur du upplever problemet):**
         ---
         {problem_description_for_prompt}
+        ---
+        **Kontext - Teknisk Fakta (Ditt exakta minne om du blir tillfrågad):**
+        ---
+        {facts_string}
         ---
         **Kontext - Studentens SENASTE meddelande (som du ska svara på):**
         ---
@@ -449,10 +469,11 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         **Din Uppgift:** Svara på studentens senaste meddelande. Problemet är **INTE** löst.
 
         **Instruktioner:**
-        1.  Ditt svar **MÅSTE** direkt adressera det studenten skrev i sitt meddelande.
-        2.  Använd information från "Ditt Problem (Ditt Minne)" för att formulera ditt svar.
-        3.  Eftersom problemet kvarstår, måste du nämna ett specifikt symptom från din problembeskrivning för att visa det.
+        1.  Svara ALLTID på studentens direkta frågor. Om de frågar om en teknisk detalj, **ANVÄND "Teknisk Fakta" för att ge ett exakt svar.**
+        2.  Svara som Ulla, utifrån "Din Berättelse".
+        3.  Eftersom problemet kvarstår, måste du nämna ett specifikt symptom du upplever.
         """
+        # --- END CHANGE ---
 
     messages_for_ulla = [
         {'role': 'system', 'content': ulla_system_context},
