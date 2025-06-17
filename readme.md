@@ -6,14 +6,15 @@ The system is built to help IT support students practice their diagnostic, commu
 
 ## Features
 
-- **Email-Based Interaction:** Communicates using the Microsoft Graph API to send and receive real emails.
-- **Multi-Level Problem Catalogue:** Problems are defined in `prompts.py` and structured into multiple difficulty levels, unlocked as the student succeeds.
-- **Persistent Student Tracking:** A SQLite database (`conversations.db`) tracks each student's progress, current level, and active conversation.
-- **Dual-LLM Architecture:**
-  - **Evaluator AI:** A strict, logical model that determines if a student's suggestion correctly solves the problem.
-  - **Persona AI:** A creative model that plays the role of Ulla, responding conversationally based on the Evaluator's verdict.
-- **Highly Configurable:** Personas, problems, and difficulty levels can be easily modified or extended by editing the `prompts.py` file.
-- **Utility Functions:** Includes command-line flags for database inspection and inbox cleanup.
+-   **Email-Based Interaction:** Communicates using the Microsoft Graph API to send and receive real emails.
+-   **Multi-Level Problem Catalogue:** Problems are defined in `prompts.py` and structured into multiple difficulty levels, unlocked as the student succeeds.
+-   **Persistent Student Tracking:** A SQLite database (`conversations.db`) tracks each student's progress, current level, and active conversation.
+-   **Conversation Archiving:** Saves the full history of every completed conversation to a separate archive database (`completed_conversations.db`) for later review and analysis.
+-   **Dual-LLM Architecture:**
+    -   **Evaluator AI:** A strict, logical model that determines if a student's suggestion correctly solves the problem.
+    -   **Persona AI:** A creative model that plays the role of Ulla, responding conversationally based on the Evaluator's verdict.
+-   **Highly Configurable:** Personas, problems, and difficulty levels can be easily modified or extended by editing the `prompts.py` file.
+-   **Utility Functions:** Includes command-line flags for database inspection and inbox cleanup.
 
 ## How It Works
 
@@ -44,14 +45,16 @@ The system operates in a loop, checking an email inbox for new messages. When a 
 +----------------+                                            +---------------------+
 ```
 
+Once a problem is successfully solved, the entire conversation transcript is saved to an archive database (`completed_conversations.db`), and the active problem is cleared for that student, allowing them to start a new one.
+
 ## Setup and Installation
 
 ### Prerequisites
 
-- Python 3.8+
-- An active [Ollama](https://ollama.com/) instance, running and accessible from where the script is hosted.
-- The LLM models specified in your `.env` file must be pulled in Ollama (e.g., `ollama pull gemma3:12b-it-qat`).
-- An Azure Active Directory (Azure AD) account with permissions to create and manage App Registrations.
+-   Python 3.8+
+-   An active [Ollama](https://ollama.com/) instance, running and accessible from where the script is hosted.
+-   The LLM models specified in your `.env` file must be pulled in Ollama (e.g., `ollama pull gemma3:12b-it-qat`).
+-   An Azure Active Directory (Azure AD) account with permissions to create and manage App Registrations.
 
 ### Step 1: Clone the Repository
 
@@ -153,8 +156,13 @@ The script will start polling the configured mailbox for unread emails and proce
 ### Utility Commands
 
 -   **Print Database Contents:**
+    Prints the contents of both the active and completed databases. You can optionally provide a student's email address to filter the output for just that user.
     ```bash
+    # Print all data from all databases
     python MailResponder.py --printdb
+
+    # Print data only for a specific student
+    python MailResponder.py --printdb student@example.com
     ```
 
 -   **Empty the Inbox:** Deletes **ALL** emails from the bot's inbox. Use with caution.
@@ -168,7 +176,8 @@ The script will start polling the configured mailbox for unread emails and proce
 .
 ├── MailResponder.py          # Main application script, contains all core logic.
 ├── prompts.py                # Contains all LLM system prompts and the problem catalogues.
-├── conversations.db          # SQLite database for tracking student progress.
+├── conversations.db          # SQLite database for tracking student progress and active problems.
+├── completed_conversations.db  # Archive database for all solved conversations.
 ├── .env                      # Holds all secrets and configuration variables (MUST be ignored by git).
 └── requirements.txt          # List of Python dependencies.
 ```

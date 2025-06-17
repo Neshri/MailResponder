@@ -32,8 +32,8 @@ AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID")
 AZURE_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 TARGET_USER_GRAPH_ID = os.getenv('BOT_EMAIL_ADDRESS')
-PERSONA_MODEL = os.getenv('PERSONA_MODEL') # Changed
-EVAL_MODEL = os.getenv('EVAL_MODEL')       # Added
+PERSONA_MODEL = os.getenv('PERSONA_MODEL')
+EVAL_MODEL = os.getenv('EVAL_MODEL')
 OLLAMA_HOST = os.getenv('OLLAMA_HOST')
 
 logging.info("Miljövariabler inlästa.")
@@ -42,7 +42,8 @@ if not all([AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET, TARGET_USER_G
 ollama_client_args = {}
 if OLLAMA_HOST: ollama_client_args['host'] = OLLAMA_HOST; logging.info(f"Ollama-klient: {OLLAMA_HOST}")
 
-DB_FILE = 'conversations.db' 
+DB_FILE = 'conversations.db'
+COMPLETED_DB_FILE = 'completed_conversations.db' # Added for conversation archive
 
 GRAPH_API_ENDPOINT = 'https://graph.microsoft.com/v1.0'
 GRAPH_SCOPES = ['https://graph.microsoft.com/.default']
@@ -51,8 +52,6 @@ MSAL_APP = None
 ACCESS_TOKEN = None
 
 # --- Database Functions ---
-# (Your existing, corrected DB functions: init_db, get_student_progress, update_student_level, 
-#  set_active_problem, get_current_active_problem, append_to_active_problem_history, clear_active_problem)
 def init_db():
     conn = None
     try:
@@ -82,6 +81,47 @@ def init_db():
         logging.info(f"Databas {DB_FILE} initierad/kontrollerad med nivåstruktur.")
     except sqlite3.Error as e:
         logging.critical(f"Databasinitiering misslyckades: {e}", exc_info=True); raise
+    finally:
+        if conn: conn.close()
+
+# --- New functions to handle the completed conversations archive ---
+def init_completed_db():
+    conn = None
+    try:
+        conn = sqlite3.connect(COMPLETED_DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS completed_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_email TEXT NOT NULL,
+                problem_id TEXT NOT NULL,
+                problem_level_index INTEGER NOT NULL,
+                full_conversation_history TEXT NOT NULL,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        logging.info(f"Databas {COMPLETED_DB_FILE} för slutförda konversationer initierad/kontrollerad.")
+    except sqlite3.Error as e:
+        logging.critical(f"Initiering av databas för slutförda konversationer misslyckades: {e}", exc_info=True); raise
+    finally:
+        if conn: conn.close()
+
+def save_completed_conversation(student_email, problem_id, problem_level_index, full_conversation_history):
+    conn = None
+    try:
+        conn = sqlite3.connect(COMPLETED_DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO completed_conversations 
+            (student_email, problem_id, problem_level_index, full_conversation_history)
+            VALUES (?, ?, ?, ?)
+        ''', (student_email, problem_id, problem_level_index, full_conversation_history))
+        conn.commit()
+        logging.info(f"Arkiverade slutförd konversation för {student_email} (Problem: {problem_id})")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"DB-fel vid arkivering av konversation för {student_email}: {e}", exc_info=True); return False
     finally:
         if conn: conn.close()
 
@@ -207,7 +247,7 @@ def clear_active_problem(student_email):
     finally:
         if conn: conn.close()
 
-# --- Graph API Helper Functions (Unchanged) ---
+# --- Graph API Helper Functions ---
 def get_graph_token():
     global MSAL_APP, ACCESS_TOKEN
     if MSAL_APP is None: MSAL_APP = msal.ConfidentialClientApplication(AZURE_CLIENT_ID, authority=MSAL_AUTHORITY, client_credential=AZURE_CLIENT_SECRET)
@@ -221,7 +261,7 @@ def jwt_is_expired(token_str):
     try: payload_str = token_str.split('.')[1]; payload_str += '=' * (-len(payload_str) % 4); payload = json.loads(base64.urlsafe_b64decode(payload_str).decode()); return payload.get('exp', 0) < time.time()
     except Exception: return True
 
-def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers_extra=None): # Parameter name changed
+def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers_extra=None):
     global ACCESS_TOKEN
     if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
         logging.info("Token saknas/utgånget i make_graph_api_call, försöker förnya.")
@@ -231,7 +271,6 @@ def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers
     headers = {'Authorization': 'Bearer ' + ACCESS_TOKEN, 'Content-Type': 'application/json'}
     if headers_extra: headers.update(headers_extra)
 
-    # Determine if endpoint_or_url is a full URL or a suffix
     if endpoint_or_url.startswith("https://") or endpoint_or_url.startswith("http://"):
         url = endpoint_or_url
     else:
@@ -240,7 +279,7 @@ def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers
     try:
         response = requests.request(method, url, headers=headers, json=data, params=params, timeout=30)
         response.raise_for_status()
-        if response.status_code in [202, 204]: return True # 204 is typical for successful DELETE
+        if response.status_code in [202, 204]: return True
         return response.json()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401: logging.warning("Graph API 401. Ogiltigförklarar token."); ACCESS_TOKEN = None
@@ -250,7 +289,7 @@ def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers
         logging.error(f"Graph HTTP-fel: {e.response.status_code} - {err_details} ({method} {url})"); return None
     except requests.exceptions.RequestException as e: logging.error(f"Graph anropsfel: {e} ({method} {url})", exc_info=True); return None
 
-# --- Graph API Email Functions (Unchanged) ---
+# --- Graph API Email Functions ---
 def graph_send_email(recipient_email, subject, body_content, in_reply_to_message_id=None, references_header_str=None, conversation_id=None):
     message_payload = {"message": {"subject": subject, "body": {"contentType": "Text", "content": body_content}, "toRecipients": [{"emailAddress": {"address": recipient_email}}]}, "saveToSentItems": "true"}
     headers_list = []
@@ -320,18 +359,12 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         return False
     
 def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned):
-    """
-    Calls an LLM to act as a strict evaluator.
-    Removes <think>...</think> blocks and checks for "[LÖST]" presence.
-    Returns '[LÖST]' or '[EJ_LÖST]'.
-    """
-    global ollama # Ensure ollama is accessible
-    if not EVAL_MODEL: # Changed
-        logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt."); return "[EJ_LÖST]" # Default to not solved on error
+    global ollama
+    if not EVAL_MODEL:
+        logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt."); return "[EJ_LÖST]"
 
-    logging.info(f"Evaluator AI för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.") # Logging model used
+    logging.info(f"Evaluator AI för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
 
-    # System prompt for the evaluator is very direct
     evaluator_prompt_content = f"""Tekniskt Problem: "{problem_description}"
 Korrekta Lösningar/lösningsnyckelord: {solution_keywords}
 Studentens SENASTE Meddelande:
@@ -346,50 +379,34 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         {'role': 'user', 'content': evaluator_prompt_content}
     ]
     
-    # Log input to evaluator
-    # logging.debug(f"--- MEDDELANDE TILL EVALUATOR AI ({student_email}) ---\n{json.dumps(messages_for_evaluator, indent=2, ensure_ascii=False)}\n--- SLUT ---")
-
     try:
         response = ollama.chat(
-            model=EVAL_MODEL, # Changed
+            model=EVAL_MODEL,
             messages=messages_for_evaluator,
             options={'temperature': 0.1, 'num_predict': 500, "num_thread": 24},
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
-        
-        # Remove <think>...</think> blocks
         processed_eval_reply = re.sub(r"<think>.*?</think>", "", raw_eval_reply_from_llm, flags=re.DOTALL).strip()
         
         if processed_eval_reply != raw_eval_reply_from_llm:
             logging.info(f"Evaluator AI ({student_email}): Removed <think> block. Original: '{raw_eval_reply_from_llm}', Processed: '{processed_eval_reply}'")
-        
-        # logging.debug(f"--- RÅTT SVAR FRÅN EVALUATOR AI ({student_email}) ---\n{raw_eval_reply_from_llm}\n--- SLUT ---")
-        # logging.debug(f"--- PROCESSED SVAR FRÅN EVALUATOR AI ({student_email}) ---\n{processed_eval_reply}\n--- SLUT ---")
-
 
         if "[LÖST]" in processed_eval_reply:
             logging.info(f"Evaluator AI ({student_email}): Bedömning [LÖST] (baserat på närvaro i '{processed_eval_reply}')")
             return "[LÖST]"
-        else: # Default to EJ_LÖST if not an exact match, or if it errors/gives other text
-            # Check if the processed reply was *meant* to be "[EJ_LÖST]" or something else entirely
-            if "[EJ_LÖST]" not in processed_eval_reply : # If it's not [EJ_LÖST] either, it's unexpected
+        else:
+            if "[EJ_LÖST]" not in processed_eval_reply :
                  logging.warning(f"Evaluator AI ({student_email}): Oväntat svar '{processed_eval_reply}', tolkar som [EJ_LÖST].")
-            else: # It contained [EJ_LÖST] or was empty/something else not [LÖST]
+            else:
                 logging.info(f"Evaluator AI ({student_email}): Bedömning [EJ_LÖST] (baserat på frånvaro av '[LÖST]' i '{processed_eval_reply}')")
             return "[EJ_LÖST]"
     except Exception as e:
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
-        return "[EJ_LÖST]" # Default to not solved on error
+        return "[EJ_LÖST]"
     
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla, 
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
-    """
-    Calls an LLM to generate Ulla's persona reply.
-    This version uses the correct architecture:
-    - System Prompt: Contains persona rules AND the full conversation history for long-term context.
-    - User Prompt: Contains the immediate task, grounded with the problem description and the latest message.
-    """
     global ollama
     if not PERSONA_MODEL:
         logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt."); return "Glömde vad jag skulle säga..."
@@ -397,9 +414,6 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
-
-    # --- THIS IS THE CORRECTED PART: RE-INTRODUCING THE FULL HISTORY ---
-    # The system context now contains BOTH the persona rules AND the full conversation history.
     ulla_system_context = f"""
     {ULLA_PERSONA_PROMPT}
 
@@ -410,7 +424,6 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     """
 
     if evaluator_decision_marker == "[LÖST]":
-        # The task prompt for success.
         ulla_task_prompt = f"""
         **Kontext - Ditt Problem:**
         ---
@@ -424,7 +437,6 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         3.  Avsluta konversationen artigt.
         """
     else: # "[EJ_LÖST]"
-        # The task prompt for failure/continuation. It's focused and direct.
         ulla_task_prompt = f"""
         **Kontext - Ditt Problem (Ditt Minne):**
         ---
@@ -448,7 +460,6 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     ]
 
     try:
-        # (The rest of the function remains the same)
         response = ollama.chat(
             model=PERSONA_MODEL,
             messages=messages_for_ulla,
@@ -466,17 +477,10 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     
 def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info, 
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
-                                   active_problem_convo_id_db, # Added for result package
-                                   email_data_for_result): # Added for result package
-    """
-    Worker function: 
-    1. Calls Evaluator AI.
-    2. Calls Ulla Persona AI based on evaluator's decision.
-    Returns a dictionary for the main thread.
-    """
+                                   active_problem_convo_id_db,
+                                   email_data_for_result):
     logging.info(f"LLM-tråd (_llm_evaluation_and_reply_task) startad för {student_email}")
 
-    # Step 1: Get Evaluator's Decision
     evaluator_marker = get_evaluator_decision(
         student_email, 
         problem_info['beskrivning'], 
@@ -485,30 +489,29 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
     )
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 
-    # Step 2: Get Ulla's Persona Reply
     ulla_final_reply_text = get_ulla_persona_reply(
         student_email,
-        full_history_string, # History already includes latest student message
+        full_history_string,
         problem_info,
-        latest_student_message_cleaned, # For Ulla's context if needed, though history has it
+        latest_student_message_cleaned,
         problem_level_idx_for_prompt,
-        evaluator_marker # Pass the decision to Ulla's prompt
+        evaluator_marker
     )
 
     result_package = {
         "email_data": email_data_for_result,
         "ulla_final_reply_body": ulla_final_reply_text,
-        "is_solved": is_solved_by_evaluator, # Decision comes from evaluator
-        "error": False, # Assuming no critical error in this worker itself yet
-        "send_reply": bool(ulla_final_reply_text), # Send if Ulla generated something
-        # Pass through other necessary data for main thread
+        "is_solved": is_solved_by_evaluator,
+        "error": False,
+        "send_reply": bool(ulla_final_reply_text),
         "active_problem_level_idx": problem_level_idx_for_prompt,
         "active_problem_info_id": problem_info['id'],
         "active_problem_convo_id_db": active_problem_convo_id_db,
-        "reply_subject": email_data_for_result["subject"], # Base subject
+        "reply_subject": email_data_for_result["subject"],
         "in_reply_to_for_send": email_data_for_result["internet_message_id"],
         "references_for_send": f"{email_data_for_result['references_header_value'] if email_data_for_result['references_header_value'] else ''} {email_data_for_result['internet_message_id']}".strip(),
-        "convo_id_for_send": email_data_for_result["graph_conversation_id_incoming"] or active_problem_convo_id_db
+        "convo_id_for_send": email_data_for_result["graph_conversation_id_incoming"] or active_problem_convo_id_db,
+        "full_history_string": full_history_string # Pass this through for archiving
     }
     
     if not ulla_final_reply_text:
@@ -518,10 +521,9 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
 
     return result_package
 
-# --- Core Email Processing Loop (graph_check_emails - Modified to use new worker) ---
+# --- Core Email Processing Loop (graph_check_emails) ---
 def graph_check_emails():
     global ACCESS_TOKEN 
-    # ... (select_fields, params, endpoint, initial Graph call - same as your last version) ...
     select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
@@ -546,13 +548,12 @@ def graph_check_emails():
             logging.warning(f"Main: Skippar {email_data['graph_msg_id']} (själv/system). Markerar läst.")
             mark_email_as_read(email_data["graph_msg_id"]); processed_ids_in_phase1.add(email_data["graph_msg_id"]); continue
 
-        student_next_eligible_level_idx, _ = get_student_progress(email_data["sender_email"]) # This is the highest level_idx they are eligible for + 1 (or 0 for new)
+        student_next_eligible_level_idx, _ = get_student_progress(email_data["sender_email"])
         active_hist_str, active_problem_info, active_problem_level_idx_db, active_problem_convo_id_db = get_current_active_problem(email_data["sender_email"])
         
-        detected_start_level_idx = -1  # Level index if a valid start command is found
+        detected_start_level_idx = -1
         is_explicit_body_start_command = False
 
-        # 1. Check for a start command in the email BODY first. This takes precedence.
         for level_idx, phrase_text in enumerate(START_PHRASES):
             if level_idx >= NUM_LEVELS:
                 break
@@ -560,35 +561,26 @@ def graph_check_emails():
             if email_data["cleaned_body"].lower().strip().startswith(current_start_phrase_lower):
                 detected_start_level_idx = level_idx
                 is_explicit_body_start_command = True
-                # Log intent, actual eligibility check comes after subject check
                 break
         
-        # 2. If no explicit body command, check the SUBJECT.
-        #    A subject command only counts if there's NO active problem.
         if not is_explicit_body_start_command:
             for level_idx, phrase_text in enumerate(START_PHRASES):
                 if level_idx >= NUM_LEVELS:
                     break
                 current_start_phrase_lower = phrase_text.lower()
                 if email_data["subject"] and current_start_phrase_lower in email_data["subject"].lower():
-                    if not active_problem_info: # Only treat as start if no active problem
+                    if not active_problem_info:
                         detected_start_level_idx = level_idx
-                        # Log intent, actual eligibility check comes after subject check
                         break 
                     else:
                         logging.info(f"Main: Startkommando i ÄMNESRAD ignorerat för {email_data['sender_email']} (nivå {level_idx +1}) p.g.a. pågående aktivt problem ({active_problem_info['id']}). Tolkas som svar.")
                         break 
         
-        # 3. Categorize the email based on the findings AND eligibility
         if detected_start_level_idx != -1:
-            # A start command was potentially found (either body or valid subject).
-            # NOW, check if the user is eligible for this detected level.
-            # student_next_eligible_level_idx is the highest level index they can start (e.g., 0 for new, 1 if level 0 completed)
             if detected_start_level_idx <= student_next_eligible_level_idx:
-                # User is eligible for this level (it's a replay or the current next level).
                 if is_explicit_body_start_command:
                     logging.info(f"Main: Startkommando explicit i E-POSTKROPP detekterat för behörig nivå {detected_start_level_idx + 1} från {email_data['sender_email']}. Köar 'start_command'.")
-                else: # Must be subject command with no active problem
+                else:
                     logging.info(f"Main: Startkommando i ÄMNESRAD detekterat för behörig nivå {detected_start_level_idx + 1} (inget aktivt problem) från {email_data['sender_email']}. Köar 'start_command'.")
                 
                 emails_to_process_sequentially.append({
@@ -597,7 +589,6 @@ def graph_check_emails():
                     "level_idx": detected_start_level_idx 
                 })
             else:
-                # User is trying to start a level that is too high / not yet unlocked.
                 logging.warning(f"Main: Student {email_data['sender_email']} försökte starta nivå {detected_start_level_idx + 1}, men är endast behörig upp till (och med) nivå {student_next_eligible_level_idx + 1}.")
                 
                 msg_body = (f"Hej! Du försökte starta Nivå {detected_start_level_idx + 1} (index {detected_start_level_idx}), "
@@ -606,7 +597,7 @@ def graph_check_emails():
                 if student_next_eligible_level_idx < NUM_LEVELS :
                      msg_body += (f"\nFör att spela din nästa upplåsta nivå ({student_next_eligible_level_idx + 1}), "
                                   f"använd startfrasen: \"{START_PHRASES[student_next_eligible_level_idx]}\"")
-                else: # They've completed all levels (student_next_eligible_level_idx == NUM_LEVELS)
+                else:
                     msg_body = (f"Hej! Du försökte starta Nivå {detected_start_level_idx + 1}. "
                                 f"Det ser ut som att du redan har klarat alla {NUM_LEVELS} nivåer! Grattis!")
 
@@ -621,8 +612,6 @@ def graph_check_emails():
                 processed_ids_in_phase1.add(email_data["graph_msg_id"])
         
         elif active_hist_str and active_problem_info:
-            # No valid new start command was processed (either none found, subject-only ignored, or level locked).
-            # AND an active problem exists. So, this is a reply to the active problem.
             logging.info(f"Main: E-post från {email_data['sender_email']} är svar på aktivt problem ({active_problem_info['id']}). Köar för LLM-bearbetning.")
             body_for_llm_task = email_data["cleaned_body"] if email_data["cleaned_body"].strip() else (email_data.get('body_preview') or "").strip()
             if not body_for_llm_task:
@@ -634,8 +623,6 @@ def graph_check_emails():
             student_entry_for_db = f"Support: {body_for_llm_task}\n\n"
             if active_hist_str.strip().endswith(student_entry_for_db.strip()):
                 logging.warning(f"Main: Meddelande {email_data['graph_msg_id']} från {email_data['sender_email']} verkar vara en dubblett. Ignorerar för att förhindra dubbel bearbetning.")
-                # We don't mark as read here. Let the next successful run do it.
-                # This prevents a state where a duplicate is ignored forever if the original process never finishes.
                 continue
             append_to_active_problem_history(email_data["sender_email"], student_entry_for_db)
             
@@ -693,25 +680,19 @@ def graph_check_emails():
                 active_lvl_idx = result_package["active_problem_level_idx"]
                 prob_id = result_package["active_problem_info_id"]
                 
-                # Determine the student's next eligible level *after this solve*
-                # Get current progress to see if this solve advances them
                 student_current_max_level_idx, _ = get_student_progress(email_data["sender_email"])
                 potential_new_next_level_idx = active_lvl_idx + 1
                 
                 completion_msg = f"\n\nJättebra! Problem {prob_id} (Nivå {active_lvl_idx + 1}) är löst!"
 
                 if potential_new_next_level_idx < NUM_LEVELS:
-                    # If they solved their current highest level or a new higher one that advances them
-                    if potential_new_next_level_idx > student_current_max_level_idx:
-                         next_start_phrase_level_idx = potential_new_next_level_idx
-                    else: # They replayed an older level, direct to their actual next level
-                         next_start_phrase_level_idx = student_current_max_level_idx
+                    next_start_phrase_level_idx = max(potential_new_next_level_idx, student_current_max_level_idx)
                     
-                    if next_start_phrase_level_idx < NUM_LEVELS: # Ensure it's still a valid level
+                    if next_start_phrase_level_idx < NUM_LEVELS:
                         completion_msg += f"\nStartfras för nästa nivå ({next_start_phrase_level_idx + 1}): \"{START_PHRASES[next_start_phrase_level_idx]}\""
-                    else: # This case implies they just completed the last level
+                    else:
                         completion_msg += "\nDu har klarat alla nivåer! Grattis!"
-                else: # They solved the last level (active_lvl_idx + 1 == NUM_LEVELS)
+                else:
                     completion_msg += "\nDu har klarat alla nivåer! Grattis!"
                 final_ulla_reply += completion_msg
             
@@ -726,13 +707,18 @@ def graph_check_emails():
                                 result_package["convo_id_for_send"]):
                 append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
                 if is_solved:
+                    # --- Save the completed conversation before clearing it ---
+                    final_history_for_archive = result_package["full_history_string"] + ulla_db_entry
+                    save_completed_conversation(
+                        student_email=email_data["sender_email"],
+                        problem_id=result_package["active_problem_info_id"],
+                        problem_level_index=result_package["active_problem_level_idx"],
+                        full_conversation_history=final_history_for_archive
+                    )
+
                     clear_active_problem(email_data["sender_email"])
                     
-                    # Get current progress *before* this update.
                     current_progress_level_before_update, _ = get_student_progress(email_data["sender_email"])
-                    
-                    # new_next_level_for_db should be the higher of their current progress 
-                    # or the level just completed + 1. This ensures progress only moves forward or stays.
                     new_next_level_for_db = max(current_progress_level_before_update, result_package["active_problem_level_idx"] + 1)
                     
                     update_student_level(email_data["sender_email"], 
@@ -760,31 +746,19 @@ def graph_check_emails():
         email_data_seq = task["data"]
         if email_data_seq["graph_msg_id"] in processed_ids_in_phase1 : continue 
 
-        student_level_idx_seq = task["level_idx"] # This is the already validated level_idx for start_command
+        student_level_idx_seq = task["level_idx"]
         if task["type"] == "start_command":
             if _handle_start_new_problem_main_thread(email_data_seq, student_level_idx_seq):
                 mark_email_as_read(email_data_seq["graph_msg_id"])
                 processed_ids_in_phase1.add(email_data_seq["graph_msg_id"])
         elif task["type"] == "inform_wrong_level_or_ignore":
-            # This handles emails that were not valid start commands (for any reason other than level locked)
-            # and were not replies to an active problem.
-            # The original `student_level_idx_seq` here is the student's current next_eligible_level_idx
-            # for context in the message.
             any_start_phrase_detected_seq = None; attempted_level_idx_seq = -1
-            for idx_s, phrase_s in enumerate(START_PHRASES): # Check again for any start phrase
+            for idx_s, phrase_s in enumerate(START_PHRASES):
                 if (email_data_seq["subject"] and phrase_s.lower() in email_data_seq["subject"].lower()) or \
                    (email_data_seq["cleaned_body"].lower().strip().startswith(phrase_s.lower())):
                     any_start_phrase_detected_seq = phrase_s; attempted_level_idx_seq = idx_s; break
             
-            # If they used a start phrase for a level they *are* eligible for, but it wasn't caught as 'start_command'
-            # (e.g., subject command with active problem, but active problem since cleared), this might be redundant
-            # or offer a chance to guide. However, Phase 1 now handles locked levels explicitly.
-            # This block mostly catches "general wrong start phrase" or "no start phrase, no active problem".
-
             if any_start_phrase_detected_seq and attempted_level_idx_seq != student_level_idx_seq and attempted_level_idx_seq <= student_level_idx_seq :
-                # They used a start phrase for a *lower or current unlocked* level, but it wasn't the *expected* next one.
-                # This case should be rare now due to Phase 1's explicit start_command handling.
-                # This implies they might be confused about their current level if they are trying to start an *older* one.
                 logging.warning(f"Main: Student {email_data_seq['sender_email']} använde startfras '{any_start_phrase_detected_seq}' (Nivå {attempted_level_idx_seq + 1}), förväntad/aktuell är Nivå {student_level_idx_seq + 1}.")
                 msg = (f"Hej! Du använde startfrasen för Nivå {attempted_level_idx_seq + 1}. "
                        f"Din nästa nivå är {student_level_idx_seq + 1}. "
@@ -796,8 +770,6 @@ def graph_check_emails():
                 if not subj: subj = "Angående nivåstart"
                 graph_send_email(email_data_seq["sender_email"], subj, msg, email_data_seq["internet_message_id"], email_data_seq["references_header_value"], email_data_seq["graph_conversation_id_incoming"])
             else: 
-                # No recognizable start phrase, or a phrase for a level that was already handled (e.g. locked)
-                # or truly unrecognized email.
                 logging.warning(f"Main: E-post från {email_data_seq['sender_email']} - ignorerar (ingen matchande åtgärd). Markerar läst.")
             mark_email_as_read(email_data_seq["graph_msg_id"])
             processed_ids_in_phase1.add(email_data_seq["graph_msg_id"])
@@ -809,10 +781,6 @@ def graph_check_emails():
 
 
 def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH_ID):
-    """
-    Deletes all emails in the inbox for the specified user.
-    Handles pagination to retrieve all message IDs before deleting.
-    """
     logging.info(f"Attempting to delete all emails in inbox for {user_principal_name_or_id}...")
     global ACCESS_TOKEN
     if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
@@ -822,8 +790,6 @@ def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH
             return False
 
     all_message_ids = []
-    # Initial endpoint to get messages from the inbox, requesting only 'id' and using $top for efficiency.
-    # Note: $top max value can vary, 100 is generally safe. Max is 1000 for messages.
     current_request_url = f"/users/{user_principal_name_or_id}/mailFolders/inbox/messages?$select=id&$top=100"
 
     logging.info("Fetching message IDs from inbox...")
@@ -831,32 +797,30 @@ def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH
     while current_request_url:
         page_count += 1
         logging.debug(f"Fetching page {page_count} of messages using URL: {current_request_url}")
-        # make_graph_api_call will handle if current_request_url is a full path or a suffix
         response = make_graph_api_call("GET", current_request_url)
 
         if not response or "value" not in response:
-            if response is None: # Indicates a request error
+            if response is None:
                  logging.error(f"Failed to fetch messages (page {page_count}). Aborting further fetching.")
-            else: # Response received, but no 'value' field or empty 'value'
+            else:
                  logging.info(f"No 'value' in response or empty message list on page {page_count}. Assuming no more messages.")
             break 
 
         messages_page = response.get("value", [])
         if not messages_page and page_count == 1 and not all_message_ids:
              logging.info("Inbox is empty or no messages retrieved on the first page.")
-             return True # Considered success as inbox is effectively empty
+             return True
 
         for msg in messages_page:
             if msg.get("id"):
                 all_message_ids.append(msg["id"])
         
-        # Check for the next page link
-        current_request_url = response.get("@odata.nextLink") # This will be a full URL
+        current_request_url = response.get("@odata.nextLink")
         if current_request_url:
             logging.info(f"Fetching next page of messages... ({len(all_message_ids)} IDs collected so far)")
         else:
             logging.info(f"All message pages fetched. Total messages to delete: {len(all_message_ids)}")
-            break # No more pages
+            break
 
     if not all_message_ids:
         logging.info("No messages found in the inbox to delete.")
@@ -868,7 +832,6 @@ def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH
 
     for i, msg_id in enumerate(all_message_ids):
         delete_endpoint_suffix = f"/users/{user_principal_name_or_id}/messages/{msg_id}"
-        # Consider adding a small delay if API throttling becomes an issue, e.g., time.sleep(0.05)
         if make_graph_api_call("DELETE", delete_endpoint_suffix):
             logging.debug(f"Successfully deleted message ID: {msg_id}")
             deleted_count += 1
@@ -876,7 +839,7 @@ def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH
             logging.error(f"Failed to delete message ID: {msg_id}")
             failed_count += 1
         
-        if (i + 1) % 50 == 0 or (i + 1) == len(all_message_ids): # Log progress every 50 emails or at the end
+        if (i + 1) % 50 == 0 or (i + 1) == len(all_message_ids):
             logging.info(f"Deletion progress: {deleted_count} deleted, {failed_count} failed. ({i + 1}/{len(all_message_ids)} processed)")
 
     logging.info(f"Email deletion process completed. Successfully deleted: {deleted_count}, Failed to delete: {failed_count}.")
@@ -884,29 +847,51 @@ def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    logging.info(f"Script startat (DB: {DB_FILE}).")
-    try: init_db()
-    except Exception as db_err: logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
+    logging.info(f"Script startat (DB: {DB_FILE}, Arkiv-DB: {COMPLETED_DB_FILE}).")
+    try:
+        init_db()
+        init_completed_db() # Initialize the archive DB
+    except Exception as db_err:
+        logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
 
     import sys
     if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
-        # ... (Your existing print_db_content function definition here) ...
-        def print_db_content(): 
+        def print_db_content(email_filter=None):
+            if email_filter:
+                print(f"--- DB UTSKRIFT (Filtrerat på: {email_filter}) ---")
+            else:
+                print("--- DB UTSKRIFT (All data) ---")
+
+            # --- 1. Print Student Progress ---
             conn_pdb = None; print("\n--- UTSKRIFT STUDENT PROGRESS ---")
             try:
                 conn_pdb = sqlite3.connect(DB_FILE); conn_pdb.row_factory = sqlite3.Row; c_pdb = conn_pdb.cursor()
-                c_pdb.execute("SELECT * FROM student_progress"); rows_pdb = c_pdb.fetchall()
-                if not rows_pdb: print("Tabellen student_progress är tom.")
+                query = "SELECT * FROM student_progress ORDER BY student_email"
+                params = []
+                if email_filter:
+                    query = "SELECT * FROM student_progress WHERE student_email = ?"
+                    params.append(email_filter)
+                c_pdb.execute(query, params)
+                rows_pdb = c_pdb.fetchall()
+                if not rows_pdb: print("Tabellen student_progress är tom (eller inget matchar filter).")
                 else: 
                     for r_pdb in rows_pdb: print(dict(r_pdb))
             except Exception as e_pdb: print(f"Fel vid utskrift av student_progress: {e_pdb}")
             finally: 
                 if conn_pdb: conn_pdb.close()
+
+            # --- 2. Print Active Problems ---
             conn_apdb = None; print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
             try:
                 conn_apdb = sqlite3.connect(DB_FILE); conn_apdb.row_factory = sqlite3.Row; c_apdb = conn_apdb.cursor()
-                c_apdb.execute("SELECT * FROM active_problems"); rows_apdb = c_apdb.fetchall()
-                if not rows_apdb: print("Tabellen active_problems är tom.")
+                query = "SELECT * FROM active_problems ORDER BY student_email"
+                params = []
+                if email_filter:
+                    query = "SELECT * FROM active_problems WHERE student_email = ?"
+                    params.append(email_filter)
+                c_apdb.execute(query, params)
+                rows_apdb = c_apdb.fetchall()
+                if not rows_apdb: print("Tabellen active_problems är tom (eller inget matchar filter).")
                 else: 
                     for r_apdb in rows_apdb: 
                         d = dict(r_apdb)
@@ -915,26 +900,48 @@ if __name__ == "__main__":
             except Exception as e_apdb: print(f"Fel vid utskrift av active_problems: {e_apdb}")
             finally: 
                 if conn_apdb: conn_apdb.close()
-            print("--- SLUT DB UTSKRIFT ---")
-        print_db_content()
+
+            # --- 3. Print Completed Conversations ---
+            conn_ccdb = None; print("\n--- UTSKRIFT COMPLETED CONVERSATIONS ---")
+            try:
+                conn_ccdb = sqlite3.connect(COMPLETED_DB_FILE); conn_ccdb.row_factory = sqlite3.Row; c_ccdb = conn_ccdb.cursor()
+                query = "SELECT * FROM completed_conversations ORDER BY completed_at DESC"
+                params = []
+                if email_filter:
+                    query = "SELECT * FROM completed_conversations WHERE student_email = ? ORDER BY completed_at DESC"
+                    params.append(email_filter)
+                c_ccdb.execute(query, params)
+                rows_ccdb = c_ccdb.fetchall()
+                if not rows_ccdb: print("Tabellen completed_conversations är tom (eller inget matchar filter).")
+                else:
+                    for r_ccdb in rows_ccdb:
+                        d = dict(r_ccdb)
+                        print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {d.get('problem_level_index')}, Completed: {d.get('completed_at')}")
+                        print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
+            except Exception as e_ccdb: print(f"Fel vid utskrift av completed_conversations: {e_ccdb}")
+            finally:
+                if conn_ccdb: conn_ccdb.close()
+
+            print("\n--- SLUT DB UTSKRIFT ---")
+
+        email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
+        print_db_content(email_filter=email_to_filter)
         exit()
     elif len(sys.argv) > 1 and sys.argv[1].lower() == "--emptyinbox":
         logging.info("--- EMPTYING INBOX (via --emptyinbox command) ---")
-        if not TARGET_USER_GRAPH_ID: # Ensure critical config is present
+        if not TARGET_USER_GRAPH_ID:
              logging.critical("TARGET_USER_GRAPH_ID is not set in .env. Cannot empty inbox.")
              exit(1)
-        if not get_graph_token(): # Ensure token can be acquired
+        if not get_graph_token():
             logging.critical("Failed to get Graph API token. Cannot empty inbox.")
             exit(1)
         
-        # Call the function to delete emails
-        # (Ensure graph_delete_all_emails_in_inbox and modified make_graph_api_call are defined above)
         success = graph_delete_all_emails_in_inbox() 
         if success:
             logging.info("Inbox emptying process reported success overall.")
         else:
             logging.warning("Inbox emptying process reported one or more failures during deletion.")
-        exit(0) # Exit after attempting to empty the inbox
+        exit(0)
 
 
     logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
@@ -967,4 +974,3 @@ if __name__ == "__main__":
                 logging.warning("Ogiltigförklarar token pga fel i huvudloop."); ACCESS_TOKEN = None 
         sleep_interval = 30
         logging.info(f"Sover i {sleep_interval} sekunder..."); time.sleep(sleep_interval)
-    
