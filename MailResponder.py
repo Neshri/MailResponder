@@ -862,7 +862,7 @@ if __name__ == "__main__":
             else:
                 print("--- DB UTSKRIFT (All data) ---")
 
-            # --- 1. Print Student Progress ---
+            # --- 1. Print Student Progress (Unchanged) ---
             conn_pdb = None; print("\n--- UTSKRIFT STUDENT PROGRESS ---")
             try:
                 conn_pdb = sqlite3.connect(DB_FILE); conn_pdb.row_factory = sqlite3.Row; c_pdb = conn_pdb.cursor()
@@ -880,7 +880,7 @@ if __name__ == "__main__":
             finally: 
                 if conn_pdb: conn_pdb.close()
 
-            # --- 2. Print Active Problems ---
+            # --- 2. Print Active Problems (Updated for consistent Level display) ---
             conn_apdb = None; print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
             try:
                 conn_apdb = sqlite3.connect(DB_FILE); conn_apdb.row_factory = sqlite3.Row; c_apdb = conn_apdb.cursor()
@@ -895,13 +895,15 @@ if __name__ == "__main__":
                 else: 
                     for r_apdb in rows_apdb: 
                         d = dict(r_apdb)
-                        print(f"Student: {d.get('student_email')}, Problem ID: {d.get('problem_id')}, Level Idx: {d.get('problem_level_index')}")
+                        level_idx = d.get('problem_level_index', -1)
+                        level_display = level_idx + 1 if level_idx != -1 else "N/A"
+                        print(f"Student: {d.get('student_email')}, Problem ID: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
                         print(f"  History:\n{d.get('conversation_history', '')}")
             except Exception as e_apdb: print(f"Fel vid utskrift av active_problems: {e_apdb}")
             finally: 
                 if conn_apdb: conn_apdb.close()
 
-            # --- 3. Print Completed Conversations ---
+            # --- 3. Print Completed Conversations (Updated for consistent Level display) ---
             conn_ccdb = None; print("\n--- UTSKRIFT COMPLETED CONVERSATIONS ---")
             try:
                 conn_ccdb = sqlite3.connect(COMPLETED_DB_FILE); conn_ccdb.row_factory = sqlite3.Row; c_ccdb = conn_ccdb.cursor()
@@ -916,7 +918,9 @@ if __name__ == "__main__":
                 else:
                     for r_ccdb in rows_ccdb:
                         d = dict(r_ccdb)
-                        print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {d.get('problem_level_index')}, Completed: {d.get('completed_at')}")
+                        level_idx = d.get('problem_level_index', -1)
+                        level_display = level_idx + 1 if level_idx != -1 else "N/A"
+                        print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx}), Completed: {d.get('completed_at')}")
                         print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
             except Exception as e_ccdb: print(f"Fel vid utskrift av completed_conversations: {e_ccdb}")
             finally:
