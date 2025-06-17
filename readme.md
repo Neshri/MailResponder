@@ -145,13 +145,21 @@ EVAL_MODEL="gemma3:12b-it-qat"
 
 ### Running the Bot
 
-Ensure your virtual environment is active (`(.venv)` is visible in your terminal). Then, run the script:
+Ensure your virtual environment is active (`(.venv)` is visible in your terminal).
 
+#### Running in the Foreground
+To run the bot and see live log output in your terminal, simply execute the script:
 ```bash
 python MailResponder.py
 ```
+This is recommended for testing and debugging. The script will stop if you close the terminal or press `Ctrl+C`.
 
-The script will start polling the configured mailbox for unread emails and process them accordingly.
+#### Running in the Background (Linux/macOS)
+For continuous operation on a Linux or macOS system, you can run the script as a background process using the `&` operator. This will free up your terminal for other commands.
+```bash
+python MailResponder.py &
+```
+**Note:** Be aware that if you close your terminal session, the background process may also be terminated. This method is suitable for short-term background execution where you plan to keep the session open.
 
 ### Utility Commands
 
