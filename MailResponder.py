@@ -405,14 +405,13 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "[EJ_LÖST]"
     
-# In MailResponder.py
 
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
     """
     Calls an LLM to generate Ulla's persona reply.
-    This version places all ground-truth data into the system prompt to give it
-    higher authority and prevent the model from contradicting it.
+    This version uses Python to find relevant facts and injects them into a simple,
+    role-play-oriented prompt, making the AI's job easier and more reliable.
     """
     global ollama
     if not PERSONA_MODEL:
@@ -421,51 +420,65 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
-    technical_facts_list = problem_info_for_ulla.get('tekniska_fakta', [])
+    # Use .get() to safely get the dictionary of facts
+    technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
+
+    # The system prompt is now just the simple actor instructions.
+    system_prompt_content = ULLA_PERSONA_PROMPT
+
+    # The user prompt will contain the conversational history and the specific task.
+    user_prompt_content = f"""
+    **Hittillsvarande Konversation (Referens):**
+    ---
+    {full_history_string_for_ulla}
+    ---
+    **Studentens SENASTE meddelande (som du ska svara på):**
+    ---
+    {latest_student_message_for_ulla}
+    ---
+    """
 
     if evaluator_decision_marker == "[LÖST]":
-        # For a solved state, a simple prompt is sufficient.
-        system_prompt_content = f"""
-        {ULLA_PERSONA_PROMPT}
+        user_prompt_content += f"""
+        **Din Scenario-bakgrund:**
+        {problem_description_for_prompt}
         
-        **BERÄTTELSE (Kontext):**
-        ---
-        {problem_description_for_prompt}
-        ---
+        **Din Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta.
         """
-        user_prompt_content = "Uppgift: Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta."
-
     else: # "[EJ_LÖST]"
-        # For an ongoing problem, the system prompt contains all immutable truth.
-        facts_string = "\n".join(f"- {fact}" for fact in technical_facts_list)
-        system_prompt_content = f"""
-        {ULLA_PERSONA_PROMPT}
+        # --- PYTHON LOGIC TO FIND FACTS ---
+        found_fact_to_report = None
+        student_message_lower = latest_student_message_for_ulla.lower()
 
-        **DIN VERKLIGHET:**
-        Du är Ulla, och detta är din situation. Denna information är den enda sanningen.
+        # Iterate through the facts dictionary to find a matching keyword.
+        for keyword, fact in technical_facts_dict.items():
+            if keyword.lower() in student_message_lower:
+                found_fact_to_report = (keyword, fact)
+                break  # Stop after finding the first match
 
-        **FAKTA (För tekniska frågor):**
-        ---
-        {facts_string}
-        ---
+        # --- CONSTRUCT THE TASK BASED ON THE PYTHON LOGIC ---
+        if found_fact_to_report:
+            # A keyword was found. Command the AI to state the fact.
+            keyword_found, fact_to_state = found_fact_to_report
+            logging.info(f"Fakta hittad för nyckelord '{keyword_found}'. Injicerar i prompt.")
+            user_prompt_content += f"""
+            **Din Scenario-bakgrund:**
+            {problem_description_for_prompt}
 
-        **BERÄTTELSE (För personlighet och allmänna frågor):**
-        ---
-        {problem_description_for_prompt}
-        ---
-        """
-        # The user prompt now only contains the conversational turn.
-        user_prompt_content = f"""
-        **Hittillsvarande Konversation (Referens):**
-        ---
-        {full_history_string_for_ulla}
-        ---
-        **Studentens SENASTE meddelande (som du ska svara på):**
-        ---
-        {latest_student_message_for_ulla}
-        ---
-        **Uppgift:** Svara på studentens senaste meddelande. Följ dina regler noggrant.
-        """
+            **Din Uppgift:** Svara på studentens senaste meddelande. Deras fråga innehåller termen "{keyword_found}".
+            1.  Börja med att som Ulla uttrycka att du inte förstår vad "{keyword_found}" betyder.
+            2.  Fortsätt sedan med att säga att du kan läsa upp exakt vad som står på en pryl/lapp/skärm.
+            3.  Presentera sedan FAKTAN: "{fact_to_state}"
+            """
+        else:
+            # No specific keyword was found. Give a general, confused reply.
+            logging.info("Ingen teknisk fakta-nyckelord hittad. Genererar allmänt svar.")
+            user_prompt_content += f"""
+            **Din Scenario-bakgrund:**
+            {problem_description_for_prompt}
+
+            **Din Uppgift:** Svara på studentens senaste meddelande. Eftersom du inte förstår deras tekniska fråga, svara bara allmänt och förvirrat baserat på din scenario-bakgrund. Fråga dem gärna vad de menar eller be om en enklare förklaring.
+            """
 
     messages_for_ulla = [
         {'role': 'system', 'content': system_prompt_content},
@@ -487,6 +500,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     except Exception as e:
         logging.error(f"Ulla Persona AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "Åh nej, nu tappade jag visst bort mig lite..."
+    
     
 def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info, 
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
