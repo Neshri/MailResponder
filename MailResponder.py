@@ -457,6 +457,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         # --- PYTHON LOGIC TO FIND FACTS ---
         found_fact_to_report = None
         student_message_lower = latest_student_message_for_ulla.lower()
+        logging.info(f"Studentens SENASTE meddelande (som du ska svara på): '{latest_student_message_for_ulla}'")
 
         # Iterate through the facts dictionary to find a matching keyword.
         for keyword, fact in technical_facts_dict.items():
