@@ -316,8 +316,16 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None):
             if s_line_lower.startswith(indicator): found_q = True; break
         if found_q: break
         if not line.strip().startswith('>'): cleaned_lines.append(line)
+    
     final_text = "\n".join(cleaned_lines).strip()
-    if not final_text and body_text.strip(): return "" 
+
+    # --- THIS IS THE CORRECTED LOGIC ---
+    # If the cleaning resulted in an empty string, but the original text was not empty,
+    # it means the cleaning was too aggressive. Fall back to the original text.
+    if not final_text.strip() and body_text.strip():
+        logging.warning("Body cleaning resulted in an empty string; falling back to original body to prevent data loss.")
+        return body_text.strip()
+    
     return final_text
 
 def mark_email_as_read(graph_message_id):
