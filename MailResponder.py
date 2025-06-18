@@ -405,8 +405,15 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "[EJ_LÖST]"
     
+# In MailResponder.py
+
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
+    """
+    Calls an LLM to generate Ulla's persona reply.
+    This version places all ground-truth data into the system prompt to give it
+    higher authority and prevent the model from contradicting it.
+    """
     global ollama
     if not PERSONA_MODEL:
         logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt."); return "Glömde vad jag skulle säga..."
@@ -416,49 +423,53 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
     technical_facts_list = problem_info_for_ulla.get('tekniska_fakta', [])
 
-    # The conversation history is now clearly labeled as secondary context.
-    ulla_system_context = f"""
-    {ULLA_PERSONA_PROMPT}
-
-    **Tidigare Konversation (Referens):**
-    ---
-    {full_history_string_for_ulla}
-    ---
-    """
-
     if evaluator_decision_marker == "[LÖST]":
-        ulla_task_prompt = f"""
-        **Uppgift:** Studenten löste precis problemet! Svara som Ulla.
-        Använd "Din Berättelse" från nedan som kontext för ditt svar.
+        # For a solved state, a simple prompt is sufficient.
+        system_prompt_content = f"""
+        {ULLA_PERSONA_PROMPT}
         
-        **Din Berättelse:**
+        **BERÄTTELSE (Kontext):**
         ---
         {problem_description_for_prompt}
         ---
         """
-    else: # "[EJ_LÖST]"
-        facts_string = "\n".join(f"- {fact}" for fact in technical_facts_list)
+        user_prompt_content = "Uppgift: Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta."
 
-        # The context blocks are now explicitly labeled according to the new prompt's rules.
-        ulla_task_prompt = f"""
-        **Din Berättelse (För din personlighet):**
+    else: # "[EJ_LÖST]"
+        # For an ongoing problem, the system prompt contains all immutable truth.
+        facts_string = "\n".join(f"- {fact}" for fact in technical_facts_list)
+        system_prompt_content = f"""
+        {ULLA_PERSONA_PROMPT}
+
+        **DIN VERKLIGHET:**
+        Du är Ulla, och detta är din situation. Denna information är den enda sanningen.
+
+        **FAKTA (För tekniska frågor):**
+        ---
+        {facts_string}
+        ---
+
+        **BERÄTTELSE (För personlighet och allmänna frågor):**
         ---
         {problem_description_for_prompt}
         ---
-        **KÄLLFAKTA (Din ENDA sanning för tekniska detaljer):**
+        """
+        # The user prompt now only contains the conversational turn.
+        user_prompt_content = f"""
+        **Hittillsvarande Konversation (Referens):**
         ---
-        {facts_string}
+        {full_history_string_for_ulla}
         ---
         **Studentens SENASTE meddelande (som du ska svara på):**
         ---
         {latest_student_message_for_ulla}
         ---
-        **Din Uppgift:** Svara på studentens senaste meddelande. Följ dina regler noggrant.
+        **Uppgift:** Svara på studentens senaste meddelande. Följ dina regler noggrant.
         """
 
     messages_for_ulla = [
-        {'role': 'system', 'content': ulla_system_context},
-        {'role': 'user', 'content': ulla_task_prompt}
+        {'role': 'system', 'content': system_prompt_content},
+        {'role': 'user', 'content': user_prompt_content}
     ]
 
     try:
