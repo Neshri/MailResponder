@@ -407,11 +407,6 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
     
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
-    """
-    Calls an LLM to generate Ulla's persona reply.
-    This version uses a structured prompt with a "story" and a "fact sheet"
-    to improve the model's reliability in recalling specific details.
-    """
     global ollama
     if not PERSONA_MODEL:
         logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt."); return "Glömde vad jag skulle säga..."
@@ -421,10 +416,11 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     problem_description_for_prompt = problem_info_for_ulla['beskrivning']
     technical_facts_list = problem_info_for_ulla.get('tekniska_fakta', [])
 
+    # The conversation history is now clearly labeled as secondary context.
     ulla_system_context = f"""
     {ULLA_PERSONA_PROMPT}
 
-    **Hittillsvarande Konversation:**
+    **Tidigare Konversation (Referens):**
     ---
     {full_history_string_for_ulla}
     ---
@@ -432,35 +428,32 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 
     if evaluator_decision_marker == "[LÖST]":
         ulla_task_prompt = f"""
-        **Kontext - Ditt Problem:**
+        **Uppgift:** Studenten löste precis problemet! Svara som Ulla.
+        Använd "Din Berättelse" från nedan som kontext för ditt svar.
+        
+        **Din Berättelse:**
         ---
         {problem_description_for_prompt}
         ---
-        **Uppgift:** Studenten löste precis problemet! Svara som Ulla.
-
-        **Instruktioner:**
-        1.  Uttryck glädje och tacksamhet.
-        2.  Bekräfta att det fungerade genom att beskriva hur ett av de negativa symptomen från din problembeskrivning (ovan) nu är borta.
-        3.  Avsluta konversationen artigt.
         """
     else: # "[EJ_LÖST]"
         facts_string = "\n".join(f"- {fact}" for fact in technical_facts_list)
 
-        # The context block label is changed here for emphasis
+        # The context blocks are now explicitly labeled according to the new prompt's rules.
         ulla_task_prompt = f"""
-        **Kontext - Din Berättelse (Hur du upplever problemet):**
+        **Din Berättelse (För din personlighet):**
         ---
         {problem_description_for_prompt}
         ---
-        **Kontext - ABSOLUT FAKTA (KÄLLA FÖR DINA SVAR):**
+        **KÄLLFAKTA (Din ENDA sanning för tekniska detaljer):**
         ---
         {facts_string}
         ---
-        **Kontext - Studentens SENASTE meddelande (som du ska svara på):**
+        **Studentens SENASTE meddelande (som du ska svara på):**
         ---
         {latest_student_message_for_ulla}
         ---
-        **Din Uppgift:** Svara på studentens senaste meddelande. Problemet är **INTE** löst.
+        **Din Uppgift:** Svara på studentens senaste meddelande. Följ dina regler noggrant.
         """
 
     messages_for_ulla = [
