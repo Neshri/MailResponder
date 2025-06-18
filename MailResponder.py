@@ -65,20 +65,18 @@ def init_db():
                 last_active_graph_convo_id TEXT
             )
         ''')
+        # SIMPLIFIED: Only stores the ID and the dynamic history.
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS active_problems (
                 student_email TEXT PRIMARY KEY,
                 problem_id TEXT NOT NULL,
-                problem_description TEXT NOT NULL,
-                correct_solution_keywords TEXT NOT NULL,
                 conversation_history TEXT NOT NULL,
-                problem_level_index INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(student_email) REFERENCES student_progress(student_email)
             )
         ''')
         conn.commit()
-        logging.info(f"Databas {DB_FILE} initierad/kontrollerad med nivåstruktur.")
+        logging.info(f"Databas {DB_FILE} initierad/kontrollerad med förenklad struktur.")
     except sqlite3.Error as e:
         logging.critical(f"Databasinitiering misslyckades: {e}", exc_info=True); raise
     finally:
@@ -169,18 +167,19 @@ def set_active_problem(student_email, problem, problem_level_idx, graph_conversa
         cursor = conn.cursor()
         timestamp = datetime.datetime.now()
         initial_history_string = f"Ulla: {problem['start_prompt']}\n\n"
-        keywords_json = json.dumps(problem['losning_nyckelord'])
+        
         current_level_for_insert, _ = get_student_progress(student_email)
         cursor.execute(
             "INSERT INTO student_progress (student_email, next_level_index, last_active_graph_convo_id) VALUES (?, ?, ?) "
             "ON CONFLICT(student_email) DO UPDATE SET last_active_graph_convo_id = excluded.last_active_graph_convo_id",
             (student_email, current_level_for_insert, graph_conversation_id)
         )
+        # SIMPLIFIED: Only inserts the ID and the history.
         cursor.execute('''
             REPLACE INTO active_problems 
-            (student_email, problem_id, problem_description, correct_solution_keywords, conversation_history, problem_level_index, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (student_email, problem['id'], problem['beskrivning'], keywords_json, initial_history_string, problem_level_idx, timestamp))
+            (student_email, problem_id, conversation_history, created_at)
+            VALUES (?, ?, ?, ?)
+        ''', (student_email, problem['id'], initial_history_string, timestamp))
         conn.commit()
         logging.info(f"Aktivt problem {problem['id']} (Nivå {problem_level_idx + 1}) satt för {student_email}")
         return True
@@ -190,27 +189,46 @@ def set_active_problem(student_email, problem, problem_level_idx, graph_conversa
         if conn: conn.close()
 
 def get_current_active_problem(student_email):
+    # This helper function finds a problem by ID from the in-memory catalogue.
+    def find_problem_by_id(problem_id):
+        for level_idx, level_catalogue in enumerate(PROBLEM_CATALOGUES):
+            for problem in level_catalogue:
+                if problem['id'] == problem_id:
+                    return problem, level_idx
+        return None, -1
+
     conn = None
     try:
         conn = sqlite3.connect(DB_FILE)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        
+        # 1. Get the active problem ID and history from the DB
         cursor.execute('''
-            SELECT ap.problem_id, ap.problem_description, ap.correct_solution_keywords, 
-                   ap.conversation_history, ap.problem_level_index, sp.last_active_graph_convo_id
+            SELECT ap.problem_id, ap.conversation_history, sp.last_active_graph_convo_id
             FROM active_problems ap
             LEFT JOIN student_progress sp ON ap.student_email = sp.student_email
             WHERE ap.student_email = ?
-        ''', (student_email,)) 
+        ''', (student_email,))
         row = cursor.fetchone()
+
         if row:
+            problem_id = row['problem_id']
             history_string = row['conversation_history']
-            problem_info = {'id': row['problem_id'], 'beskrivning': row['problem_description'], 'losning_nyckelord': json.loads(row['correct_solution_keywords'])}
-            level_idx = row['problem_level_index']
-            active_graph_convo_id = row['last_active_graph_convo_id'] 
-            return history_string, problem_info, level_idx, active_graph_convo_id
+            active_graph_convo_id = row['last_active_graph_convo_id']
+
+            # 2. Look up the full problem details from the in-memory catalogue
+            problem_info, level_idx = find_problem_by_id(problem_id)
+
+            if problem_info:
+                return history_string, problem_info, level_idx, active_graph_convo_id
+            else:
+                logging.error(f"DB Inconsistency! Active problem ID '{problem_id}' for {student_email} not found in PROBLEM_CATALOGUES.")
+                return None, None, None, None # Indicate failure
+
+        # No active problem found for the student
         return None, None, None, None
-    except (sqlite3.Error, json.JSONDecodeError) as e:
+    except sqlite3.Error as e:
         logging.error(f"Fel vid hämtning av aktivt problem för {student_email}: {e}", exc_info=True); return None, None, None, None
     finally:
         if conn: conn.close()
@@ -414,12 +432,13 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         return "[EJ_LÖST]"
     
 
+# In MailResponder.py
+
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
     """
-    Calls an LLM to generate Ulla's persona reply.
-    This version uses Python to find relevant facts and injects them into a simple,
-    role-play-oriented prompt, making the AI's job easier and more reliable.
+    Calls an LLM to generate Ulla's persona reply using a pure, principle-based
+    prompting approach, trusting the model to reason with the provided ground-truth data.
     """
     global ollama
     if not PERSONA_MODEL:
@@ -431,11 +450,19 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     # Use .get() to safely get the dictionary of facts
     technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
 
-    # The system prompt is now just the simple actor instructions.
+    # The system prompt contains the rules.
     system_prompt_content = ULLA_PERSONA_PROMPT
 
-    # The user prompt will contain the conversational history and the specific task.
+    # The user prompt contains the ground truth and the conversational turn.
     user_prompt_content = f"""
+    **KÄLLFAKTA (ABSOLUT SANNING):**
+    ---
+    {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
+    ---
+    **Din Berättelse (För din personlighet):**
+    ---
+    {problem_description_for_prompt}
+    ---
     **Hittillsvarande Konversation (Referens):**
     ---
     {full_history_string_for_ulla}
@@ -444,50 +471,18 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     ---
     {latest_student_message_for_ulla}
     ---
+    **Din Uppgift:** Svara på studentens senaste meddelande. Följ dina regler i system-prompten noggrant.
     """
 
+    # For a solved state, we can simplify the user prompt.
     if evaluator_decision_marker == "[LÖST]":
-        user_prompt_content += f"""
-        **Din Scenario-bakgrund:**
+        user_prompt_content = f"""
+        **Din Berättelse (Kontext):**
+        ---
         {problem_description_for_prompt}
-        
-        **Din Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta.
+        ---
+        **Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta.
         """
-    else: # "[EJ_LÖST]"
-        # --- PYTHON LOGIC TO FIND FACTS ---
-        found_fact_to_report = None
-        student_message_lower = latest_student_message_for_ulla.lower()
-        logging.info(f"Studentens SENASTE meddelande (som du ska svara på): '{latest_student_message_for_ulla}'")
-
-        # Iterate through the facts dictionary to find a matching keyword.
-        for keyword, fact in technical_facts_dict.items():
-            if keyword.lower() in student_message_lower:
-                found_fact_to_report = (keyword, fact)
-                break  # Stop after finding the first match
-
-        # --- CONSTRUCT THE TASK BASED ON THE PYTHON LOGIC ---
-        if found_fact_to_report:
-            # A keyword was found. Command the AI to state the fact.
-            keyword_found, fact_to_state = found_fact_to_report
-            logging.info(f"Fakta hittad för nyckelord '{keyword_found}'. Injicerar i prompt.")
-            user_prompt_content += f"""
-            **Din Scenario-bakgrund:**
-            {problem_description_for_prompt}
-
-            **Din Uppgift:** Svara på studentens senaste meddelande. Deras fråga innehåller termen "{keyword_found}".
-            1.  Börja med att som Ulla uttrycka att du inte förstår vad "{keyword_found}" betyder.
-            2.  Fortsätt sedan med att säga att du kan läsa upp exakt vad som står på en pryl/lapp/skärm.
-            3.  Presentera sedan FAKTAN: "{fact_to_state}"
-            """
-        else:
-            # No specific keyword was found. Give a general, confused reply.
-            logging.info("Ingen teknisk fakta-nyckelord hittad. Genererar allmänt svar.")
-            user_prompt_content += f"""
-            **Din Scenario-bakgrund:**
-            {problem_description_for_prompt}
-
-            **Din Uppgift:** Svara på studentens senaste meddelande. Eftersom du inte förstår deras tekniska fråga, svara bara allmänt och förvirrat baserat på din scenario-bakgrund. Fråga dem gärna vad de menar eller be om en enklare förklaring.
-            """
 
     messages_for_ulla = [
         {'role': 'system', 'content': system_prompt_content},
