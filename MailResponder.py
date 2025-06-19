@@ -323,28 +323,63 @@ def graph_send_email(recipient_email, subject, body_content, in_reply_to_message
 
 def clean_email_body(body_text, original_sender_email_for_attribution=None):
     if not body_text: return ""
-    lines = body_text.splitlines(); cleaned_lines = []
-    q_sw = ["från:", "--ursprungl meddelande--", "den ", "på "]; q_en = ["from:", "--original message--", "on ", "wrote:"]
-    if original_sender_email_for_attribution: q_sw.append(f"skrev {original_sender_email_for_attribution.lower()}")
-    all_q = [q.lower() for q in q_sw + q_en]; found_q = False
+    lines = body_text.splitlines()
+    cleaned_lines = []
+    
+    # --- NEW: A regex pattern to match common "On [date], [sender] wrote:" headers in both English and Swedish ---
+    # This specifically looks for a line starting with "On" or "Den", followed by a date/time pattern,
+    # the word "skrev" or "wrote", and ending with a colon.
+    date_header_pattern = re.compile(
+        r"^(on|den)\s+.*(wrote|skrev):", 
+        re.IGNORECASE
+    )
+
+    # Original, simpler indicators
+    q_sw = ["från:", "--ursprungl meddelande--"]
+    q_en = ["from:", "--original message--"]
+    if original_sender_email_for_attribution:
+        q_sw.append(f"skrev {original_sender_email_for_attribution.lower()}")
+    
+    all_q = [q.lower() for q in q_sw + q_en]
+    found_q = False
+
     for line in lines:
         s_line_lower = line.strip().lower()
-        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and original_sender_email_for_attribution and original_sender_email_for_attribution.lower() in s_line_lower): found_q = True; break
+
+        # --- NEW: Check the regex pattern first ---
+        if date_header_pattern.match(s_line_lower):
+            found_q = True
+            break # Stop processing when this header is found
+
+        # Check for the attribution line (e.g., "Ulla <ulla@movant.org> wrote:")
+        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and 
+            original_sender_email_for_attribution and 
+            original_sender_email_for_attribution.lower() in s_line_lower):
+            found_q = True
+            break
+
+        # Check for other simple indicators
         for indicator in all_q:
-            if s_line_lower.startswith(indicator): found_q = True; break
-        if found_q: break
-        if not line.strip().startswith('>'): cleaned_lines.append(line)
-    
+            if s_line_lower.startswith(indicator):
+                found_q = True
+                break
+        
+        if found_q:
+            break
+
+        # If no quote header is found, keep the line if it's not a ">" reply line
+        if not line.strip().startswith('>'):
+            cleaned_lines.append(line)
+
     final_text = "\n".join(cleaned_lines).strip()
 
-    # --- THIS IS THE CORRECTED LOGIC ---
-    # If the cleaning resulted in an empty string, but the original text was not empty,
-    # it means the cleaning was too aggressive. Fall back to the original text.
+    # The fallback logic remains the same and is still important
     if not final_text.strip() and body_text.strip():
         logging.warning("Body cleaning resulted in an empty string; falling back to original body to prevent data loss.")
         return body_text.strip()
     
     return final_text
+    
 
 def mark_email_as_read(graph_message_id):
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/messages/{graph_message_id}"; payload = {"isRead": True}
