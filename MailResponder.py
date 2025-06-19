@@ -323,18 +323,28 @@ def graph_send_email(recipient_email, subject, body_content, in_reply_to_message
 
 def clean_email_body(body_text, original_sender_email_for_attribution=None):
     if not body_text: return ""
+
+    # --- NEW: A regex pattern to match common multi-line reply headers ---
+    # This looks for "On [date]" or "Den [date]", followed by any characters (including newlines),
+    # and then "wrote:" or "skrev:". The re.DOTALL flag allows '.' to match newlines.
+    date_header_pattern = re.compile(
+        r"^(on|den)\s+.*(wrote|skrev):",
+        re.IGNORECASE | re.DOTALL
+    )
+
+    # Check if this pattern exists anywhere in the full body first.
+    match = date_header_pattern.search(body_text)
+    if match:
+        # If a match is found, take only the text that appeared BEFORE the match.
+        final_text = body_text[:match.start()].strip()
+        logging.info("Multi-line reply header found and stripped.")
+        return final_text
+
+    # --- If the multi-line pattern is not found, fall back to the line-by-line method ---
+    # This handles older formats and simple ">" quoting.
     lines = body_text.splitlines()
     cleaned_lines = []
     
-    # --- NEW: A regex pattern to match common "On [date], [sender] wrote:" headers in both English and Swedish ---
-    # This specifically looks for a line starting with "On" or "Den", followed by a date/time pattern,
-    # the word "skrev" or "wrote", and ending with a colon.
-    date_header_pattern = re.compile(
-        r"^(on|den)\s+.*(wrote|skrev):", 
-        re.IGNORECASE
-    )
-
-    # Original, simpler indicators
     q_sw = ["från:", "--ursprungl meddelande--"]
     q_en = ["from:", "--original message--"]
     if original_sender_email_for_attribution:
@@ -346,19 +356,13 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None):
     for line in lines:
         s_line_lower = line.strip().lower()
 
-        # --- NEW: Check the regex pattern first ---
-        if date_header_pattern.match(s_line_lower):
-            found_q = True
-            break # Stop processing when this header is found
-
-        # Check for the attribution line (e.g., "Ulla <ulla@movant.org> wrote:")
-        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and 
-            original_sender_email_for_attribution and 
+        # Simplified check, as the complex header is handled above
+        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and
+            original_sender_email_for_attribution and
             original_sender_email_for_attribution.lower() in s_line_lower):
             found_q = True
             break
-
-        # Check for other simple indicators
+        
         for indicator in all_q:
             if s_line_lower.startswith(indicator):
                 found_q = True
@@ -366,18 +370,16 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None):
         
         if found_q:
             break
-
-        # If no quote header is found, keep the line if it's not a ">" reply line
+        
         if not line.strip().startswith('>'):
             cleaned_lines.append(line)
 
     final_text = "\n".join(cleaned_lines).strip()
-
-    # The fallback logic remains the same and is still important
+    
     if not final_text.strip() and body_text.strip():
         logging.warning("Body cleaning resulted in an empty string; falling back to original body to prevent data loss.")
         return body_text.strip()
-    
+
     return final_text
     
 
@@ -467,7 +469,6 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         return "[EJ_LÖST]"
     
 
-# In MailResponder.py
 
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
@@ -916,19 +917,27 @@ if __name__ == "__main__":
     logging.info(f"Script startat (DB: {DB_FILE}, Arkiv-DB: {COMPLETED_DB_FILE}).")
     try:
         init_db()
-        init_completed_db() # Initialize the archive DB
+        init_completed_db()
     except Exception as db_err:
         logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
 
     import sys
     if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
+        # Helper function to find level index from problem ID
+        def find_level_idx_by_id(problem_id):
+            for level_idx, level_catalogue in enumerate(PROBLEM_CATALOGUES):
+                for problem in level_catalogue:
+                    if problem['id'] == problem_id:
+                        return level_idx
+            return -1
+
         def print_db_content(email_filter=None):
             if email_filter:
                 print(f"--- DB UTSKRIFT (Filtrerat på: {email_filter}) ---")
             else:
                 print("--- DB UTSKRIFT (All data) ---")
 
-            # --- 1. Print Student Progress (Unchanged) ---
+            # --- 1. Print Student Progress ---
             conn_pdb = None; print("\n--- UTSKRIFT STUDENT PROGRESS ---")
             try:
                 conn_pdb = sqlite3.connect(DB_FILE); conn_pdb.row_factory = sqlite3.Row; c_pdb = conn_pdb.cursor()
@@ -946,7 +955,7 @@ if __name__ == "__main__":
             finally: 
                 if conn_pdb: conn_pdb.close()
 
-            # --- 2. Print Active Problems (Updated for consistent Level display) ---
+            # --- 2. Print Active Problems ---
             conn_apdb = None; print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
             try:
                 conn_apdb = sqlite3.connect(DB_FILE); conn_apdb.row_factory = sqlite3.Row; c_apdb = conn_apdb.cursor()
@@ -961,15 +970,17 @@ if __name__ == "__main__":
                 else: 
                     for r_apdb in rows_apdb: 
                         d = dict(r_apdb)
-                        level_idx = d.get('problem_level_index', -1)
+                        problem_id = d.get('problem_id')
+                        # Find the level index from the in-memory catalogue
+                        level_idx = find_level_idx_by_id(problem_id)
                         level_display = level_idx + 1 if level_idx != -1 else "N/A"
-                        print(f"Student: {d.get('student_email')}, Problem ID: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
+                        print(f"Student: {d.get('student_email')}, Problem ID: {problem_id}, Level: {level_display} (Index: {level_idx})")
                         print(f"  History:\n{d.get('conversation_history', '')}")
             except Exception as e_apdb: print(f"Fel vid utskrift av active_problems: {e_apdb}")
             finally: 
                 if conn_apdb: conn_apdb.close()
 
-            # --- 3. Print Completed Conversations (Updated for consistent Level display) ---
+            # --- 3. Print Completed Conversations ---
             conn_ccdb = None; print("\n--- UTSKRIFT COMPLETED CONVERSATIONS ---")
             try:
                 conn_ccdb = sqlite3.connect(COMPLETED_DB_FILE); conn_ccdb.row_factory = sqlite3.Row; c_ccdb = conn_ccdb.cursor()
