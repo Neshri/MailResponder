@@ -446,7 +446,7 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         response = ollama.chat(
             model=EVAL_MODEL,
             messages=messages_for_evaluator,
-            options={'temperature': 0.1, 'num_predict': 500, "num_thread": 24},
+            options={'temperature': 0.1, 'num_predict': 500},
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
@@ -529,7 +529,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         response = ollama.chat(
             model=PERSONA_MODEL,
             messages=messages_for_ulla,
-            options={'temperature': 0.7, 'num_predict': 1000, 'num_thread': 24},
+            options={'temperature': 0.7, 'num_predict': 1000},
             **ollama_client_args
         )
         ulla_svar = response['message']['content'].strip()
