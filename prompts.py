@@ -208,7 +208,7 @@ PROBLEM_CATALOGUES = [
                 "symptom": "Knappar på sidan är utgråade och svarar inte",
                 "felmeddelande": "'Fel på sidan. Detaljer: Objekt stöder inte egenskapen eller metoden 'addEventListener''"
             },
-            "losning_nyckelord": ["Webbsida ('Blomsterlandet.se' i Internet Explorer 11) har utgråade/inaktiva knappar; statusfältet visar 'Fel på sidan. Detaljer: Objekt stöder inte egenskapen eller metoden 'addEventListener''", "webbläsaren blockerar eller kan inte köra nödvändiga skript (JavaScript) på sidan", "aktivera JavaScript i webbläsarens inställningar", "kontrollera säkerhetsinställningar för skript i Internet Explorer"],
+            "losning_nyckelord": ["Webbsida ('Blomsterlandet.se' i Internet Explorer 11) har utgråade/inaktiva knappar; statusfältet visar 'Fel på sidan. Detaljer: Objekt stöder inte egenskapen eller metoden 'addEventListener''", "webbläsaren blockerar eller kan inte köra nödvändiga skript (JavaScript) på sidan", "aktivera JavaScript i webbläsarens inställningar", "kontrollera säkerhetsinställningar för skript i Internet Explorer", "byt webbläsare"],
             "start_prompt": "Jag skulle beställa nya penséer på en webbsida, men alla knappar är alldeles grå och går inte att trycka på. Det är som att de har somnat!"
         },
         {
