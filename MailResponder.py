@@ -625,7 +625,7 @@ def graph_check_emails():
             if level_idx >= NUM_LEVELS:
                 break
             current_start_phrase_lower = phrase_text.lower()
-            if email_data["cleaned_body"].lower().strip().startswith(current_start_phrase_lower):
+            if email_data["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ").startswith(current_start_phrase_lower):
                 detected_start_level_idx = level_idx
                 is_explicit_body_start_command = True
                 break
