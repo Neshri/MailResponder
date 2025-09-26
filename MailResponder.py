@@ -388,6 +388,18 @@ def mark_email_as_read(graph_message_id):
     if make_graph_api_call("PATCH", endpoint, data=payload): logging.info(f"E-post {graph_message_id} markerad som läst.")
     else: logging.error(f"Misslyckades markera {graph_message_id} som läst.")
 
+# --- Add this helper function near your other helpers ---
+def get_name_from_email(email):
+    """Extracts a capitalized first name from an email address."""
+    try:
+        name_part = email.split('@')[0]
+        # Replace dots or other common separators with a space
+        name_part = name_part.replace('.', ' ').replace('_', ' ')
+        first_name = name_part.split(' ')[0]
+        return first_name.capitalize()
+    except Exception:
+        return "Support" # Fallback to the old label if anything goes wrong
+
 # --- Helper to parse email details ---
 def _parse_graph_email_item(msg_graph_item):
     email_data = {"graph_msg_id": msg_graph_item.get('id'), "subject": msg_graph_item.get('subject', ""), "sender_email": "", "internet_message_id": msg_graph_item.get('internetMessageId'), "graph_conversation_id_incoming": msg_graph_item.get('conversationId'), "references_header_value": None, "cleaned_body": "", "body_preview": msg_graph_item.get('bodyPreview', "")}
@@ -532,6 +544,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         # This is the main prompt that needs fixing.
         # We REMOVE the final "Din Uppgift" instruction.
         technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
+        student_name = get_name_from_email(student_email)
         user_prompt_content = f"""
         **KÄLLFAKTA (Din enda sanning):**
         {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
@@ -541,7 +554,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 
         **Hittillsvarande Konversation:**
         {full_history_string_for_ulla}
-        **Studentens Senaste Meddelande:**
+        **{student_name}s Senaste Meddelande:**
         {latest_student_message_for_ulla}
         """
 
@@ -718,7 +731,8 @@ def graph_check_emails():
                 processed_ids_in_phase1.add(email_data["graph_msg_id"])
                 continue
             
-            student_entry_for_db = f"Support: {body_for_llm_task}\n\n"
+            student_name = get_name_from_email(email_data["sender_email"])
+            student_entry_for_db = f"{student_name}: {body_for_llm_task}\n\n"
             if active_hist_str.strip().endswith(student_entry_for_db.strip()):
                 logging.warning(f"Main: Meddelande {email_data['graph_msg_id']} från {email_data['sender_email']} verkar vara en dubblett. Ignorerar för att förhindra dubbel bearbetning.")
                 continue
