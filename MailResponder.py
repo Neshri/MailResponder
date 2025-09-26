@@ -426,7 +426,7 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         reply_subject = email_data["subject"]
         reply_body = problem['start_prompt']
         if email_data.get("has_images"):
-            reply_body = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + reply_body
+            reply_body = "Kära nån, min syn är inte vad den har varit, så jag använder ett speciellt uppläsningsprogram som läser texten i mejlen för mig. Tyvärr kan det inte beskriva bilder, så om du skickade med en bild kan jag inte se den. Om det var något viktigt på bilden får du gärna beskriva det med ord!\n\n" + reply_body
         if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"]):
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']}")
             return True
@@ -772,7 +772,7 @@ def graph_check_emails():
         if not result_package["error"] and result_package["send_reply"]:
             final_ulla_reply = result_package["ulla_final_reply_body"]
             if result_package.get("has_images"):
-                final_ulla_reply = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + final_ulla_reply
+                final_ulla_reply = "Kära nån, min syn är inte vad den har varit, så jag använder ett speciellt uppläsningsprogram som läser texten i mejlen för mig. Tyvärr kan det inte beskriva bilder, så om du skickade med en bild kan jag inte se den. Om det var något viktigt på bilden får du gärna beskriva det med ord!\n\n" + final_ulla_reply
             is_solved = result_package["is_solved"]
             
             if is_solved and "\nStartfras för nästa nivå" not in final_ulla_reply and "\nDu har klarat alla nivåer!" not in final_ulla_reply :
@@ -866,7 +866,7 @@ def graph_check_emails():
                     msg = "Hej! Det ser ut som du redan har klarat alla nivåer! Grattis!"
 
                 if email_data_seq.get("has_images"):
-                    msg = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + msg
+                    msg = "Kära nån, min syn är inte vad den har varit, så jag använder ett speciellt uppläsningsprogram som läser texten i mejlen för mig. Tyvärr kan det inte beskriva bilder, så om du skickade med en bild kan jag inte se den. Om det var något viktigt på bilden får du gärna beskriva det med ord!\n\n" + msg
 
                 subj = f"Re: {email_data_seq['subject']}" if email_data_seq['subject'] and not email_data_seq['subject'].lower().startswith("re:") else email_data_seq['subject']
                 if not subj: subj = "Angående nivåstart"
