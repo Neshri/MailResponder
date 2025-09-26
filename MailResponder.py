@@ -467,6 +467,7 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
+        logging.info(f"Evaluator AI ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
         processed_eval_reply = re.sub(r"<think>.*?</think>", "", raw_eval_reply_from_llm, flags=re.DOTALL).strip()
         
         if processed_eval_reply != raw_eval_reply_from_llm:
