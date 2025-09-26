@@ -398,7 +398,21 @@ def _parse_graph_email_item(msg_graph_item):
     body_obj = msg_graph_item.get('body', {}); body_content = body_obj.get('content', '')
     raw_body = BeautifulSoup(body_content, "html.parser").get_text(separator='\n').strip() if body_obj.get('contentType','').lower()=='html' else body_content
     email_data["cleaned_body"] = clean_email_body(raw_body, TARGET_USER_GRAPH_ID)
-    logging.debug(f"Parsed email: ID={email_data['graph_msg_id']}, From={email_data['sender_email']}, CleanedBody='{email_data['cleaned_body'][:50]}...'")
+
+    # Detect images
+    has_images = False
+    attachments = msg_graph_item.get('attachments', [])
+    for att in attachments:
+        if att.get('contentType', '').startswith('image/'):
+            has_images = True
+            break
+    if not has_images and body_obj.get('contentType','').lower()=='html':
+        soup = BeautifulSoup(body_content, "html.parser")
+        if soup.find('img'):
+            has_images = True
+    email_data["has_images"] = has_images
+
+    logging.debug(f"Parsed email: ID={email_data['graph_msg_id']}, From={email_data['sender_email']}, HasImages={has_images}, CleanedBody='{email_data['cleaned_body'][:50]}...'")
     return email_data
 
 # --- Helper to handle "start new problem" logic (Main Thread) ---
@@ -409,8 +423,11 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         return False 
     problem = random.choice(problem_list_for_level)
     if set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"]):
-        reply_subject = email_data["subject"] 
-        if graph_send_email(email_data["sender_email"], reply_subject, problem['start_prompt'], conversation_id=email_data["graph_conversation_id_incoming"]):
+        reply_subject = email_data["subject"]
+        reply_body = problem['start_prompt']
+        if email_data.get("has_images"):
+            reply_body = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + reply_body
+        if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"]):
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']}")
             return True
         else:
@@ -586,7 +603,8 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         "in_reply_to_for_send": email_data_for_result["internet_message_id"],
         "references_for_send": f"{email_data_for_result['references_header_value'] if email_data_for_result['references_header_value'] else ''} {email_data_for_result['internet_message_id']}".strip(),
         "convo_id_for_send": email_data_for_result["graph_conversation_id_incoming"] or active_problem_convo_id_db,
-        "full_history_string": full_history_string # Pass this through for archiving
+        "full_history_string": full_history_string, # Pass this through for archiving
+        "has_images": email_data_for_result["has_images"]
     }
     
     if not ulla_final_reply_text:
@@ -598,8 +616,8 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
 
 # --- Core Email Processing Loop (graph_check_emails) ---
 def graph_check_emails():
-    global ACCESS_TOKEN 
-    select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders"
+    global ACCESS_TOKEN
+    select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders,attachments"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
     endpoint = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
     logging.info("Söker olästa e-post (Graph)...")
@@ -622,6 +640,7 @@ def graph_check_emails():
            'mailer-daemon' in email_data["sender_email"] or 'noreply' in email_data["sender_email"]:
             logging.warning(f"Main: Skippar {email_data['graph_msg_id']} (själv/system). Markerar läst.")
             mark_email_as_read(email_data["graph_msg_id"]); processed_ids_in_phase1.add(email_data["graph_msg_id"]); continue
+
 
         student_next_eligible_level_idx, _ = get_student_progress(email_data["sender_email"])
         active_hist_str, active_problem_info, active_problem_level_idx_db, active_problem_convo_id_db = get_current_active_problem(email_data["sender_email"])
@@ -668,7 +687,7 @@ def graph_check_emails():
                 
                 msg_body = (f"Hej! Du försökte starta Nivå {detected_start_level_idx + 1} (index {detected_start_level_idx}), "
                             f"men du har för närvarande endast låst upp nivåer upp till och med Nivå {student_next_eligible_level_idx + 1} (index {student_next_eligible_level_idx}).")
-                
+
                 if student_next_eligible_level_idx < NUM_LEVELS :
                      msg_body += (f"\nFör att spela din nästa upplåsta nivå ({student_next_eligible_level_idx + 1}), "
                                   f"använd startfrasen: \"{START_PHRASES[student_next_eligible_level_idx]}\"")
@@ -676,10 +695,13 @@ def graph_check_emails():
                     msg_body = (f"Hej! Du försökte starta Nivå {detected_start_level_idx + 1}. "
                                 f"Det ser ut som att du redan har klarat alla {NUM_LEVELS} nivåer! Grattis!")
 
-                reply_subject_locked = f"Re: {email_data['subject']}" if email_data['subject'] and not email_data['subject'].lower().startswith("re:") else email_data['subject']
-                if not reply_subject_locked: reply_subject_locked = "Angående nivåstart" 
+                if email_data.get("has_images"):
+                    msg_body = "Kära nån, min syn är inte vad den har varit, så jag använder ett speciellt uppläsningsprogram som läser texten i mejlen för mig. Tyvärr kan det inte beskriva bilder, så om du skickade med en bild kan jag inte se den. Om det var något viktigt på bilden får du gärna beskriva det med ord!\n\n" + msg_body
 
-                graph_send_email(email_data["sender_email"], reply_subject_locked, msg_body, 
+                reply_subject_locked = f"Re: {email_data['subject']}" if email_data['subject'] and not email_data['subject'].lower().startswith("re:") else email_data['subject']
+                if not reply_subject_locked: reply_subject_locked = "Angående nivåstart"
+
+                graph_send_email(email_data["sender_email"], reply_subject_locked, msg_body,
                                  email_data["internet_message_id"], 
                                  email_data["references_header_value"], 
                                  email_data["graph_conversation_id_incoming"])
@@ -749,6 +771,8 @@ def graph_check_emails():
 
         if not result_package["error"] and result_package["send_reply"]:
             final_ulla_reply = result_package["ulla_final_reply_body"]
+            if result_package.get("has_images"):
+                final_ulla_reply = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + final_ulla_reply
             is_solved = result_package["is_solved"]
             
             if is_solved and "\nStartfras för nästa nivå" not in final_ulla_reply and "\nDu har klarat alla nivåer!" not in final_ulla_reply :
@@ -840,6 +864,9 @@ def graph_check_emails():
                        f"För att starta den, använd: \"{START_PHRASES[student_level_idx_seq]}\".")
                 if student_level_idx_seq >= NUM_LEVELS:
                     msg = "Hej! Det ser ut som du redan har klarat alla nivåer! Grattis!"
+
+                if email_data_seq.get("has_images"):
+                    msg = "Note: Ulla can't see images, so any images in your email were ignored.\n\n" + msg
 
                 subj = f"Re: {email_data_seq['subject']}" if email_data_seq['subject'] and not email_data_seq['subject'].lower().startswith("re:") else email_data_seq['subject']
                 if not subj: subj = "Angående nivåstart"
