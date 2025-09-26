@@ -538,7 +538,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         ---
         {problem_info_for_ulla['beskrivning']}
         ---
-        **Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta glatt att problemet är borta.
+        **Uppgift:** Studentens svar hjälpte dig att lösa problemet. Svara som Ulla och bekräfta glatt att problemet är borta.
         """
     else:
         # This is the main prompt that needs fixing.
