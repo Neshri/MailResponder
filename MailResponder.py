@@ -468,6 +468,21 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "[EJ_LÖST]"
     
+def strip_markdown(text):
+    # Remove inline code `text`
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    # Remove bold/italic **text** or __text__
+    text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)
+    # Remove italic *text* or _text_
+    text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)
+    # Remove links [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    # Remove headers # ## etc at start of line
+    text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+    # Remove list markers - * + at start of line
+    text = re.sub(r'^[-\*\+]\s*', '', text, flags=re.MULTILINE)
+    return text
+    
 
 
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
@@ -527,6 +542,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         ulla_svar = response['message']['content'].strip()
         ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
         ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
+        ulla_svar = strip_markdown(ulla_svar)
         logging.info(f"Ulla Persona AI ({student_email}): Genererade svar: '{ulla_svar[:50]}...'")
         return ulla_svar
     except Exception as e:
