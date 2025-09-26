@@ -779,6 +779,12 @@ def graph_check_emails():
                     logging.error(f"En LLM-uppgift genererade ett oväntat undantag: {exc_llm_future}", exc_info=True)
 
 
+    # --- Check for LLM failures ---
+    llm_failures = [rp for rp in llm_results_from_threads if rp.get("error")]
+    if llm_failures:
+        logging.warning(f"LLM failures detected ({len(llm_failures)}/{len(llm_results_from_threads)} tasks failed). Aborting email processing to retry later.")
+        return  # Exit early without processing, so emails remain unread for next cycle
+
     # --- Phase 3: Process results from LLM threads (Main Thread) ---
     for result_package in llm_results_from_threads:
         email_data = result_package["email_data"]
