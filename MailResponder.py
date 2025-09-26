@@ -473,8 +473,8 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
     """
-    Calls an LLM to generate Ulla's persona reply using a pure, principle-based
-    prompting approach, trusting the model to reason with the provided ground-truth data.
+    Calls an LLM to generate Ulla's persona reply.
+    (Updated docstring to reflect changes)
     """
     global ollama
     if not PERSONA_MODEL:
@@ -482,42 +482,34 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    problem_description_for_prompt = problem_info_for_ulla['beskrivning']
-    # Use .get() to safely get the dictionary of facts
-    technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
-
-    # The system prompt contains the rules.
+    # The system prompt contains the rules and persona. This remains the same.
     system_prompt_content = ULLA_PERSONA_PROMPT
 
-    # The user prompt contains the ground truth and the conversational turn.
-    user_prompt_content = f"""
-    **KÄLLFAKTA (ABSOLUT SANNING):**
-    ---
-    {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
-    ---
-    **Din Berättelse (För din personlighet):**
-    ---
-    {problem_description_for_prompt}
-    ---
-    **Hittillsvarande Konversation (Referens):**
-    ---
-    {full_history_string_for_ulla}
-    ---
-    **Studentens SENASTE meddelande (som du ska svara på):**
-    ---
-    {latest_student_message_for_ulla}
-    ---
-    **Din Uppgift:** Svara på studentens senaste meddelande. Följ dina regler i system-prompten noggrant.
-    """
-
-    # For a solved state, we can simplify the user prompt.
+    # --- REVISED USER PROMPT LOGIC ---
     if evaluator_decision_marker == "[LÖST]":
+        # This prompt for the solved state is good and can remain.
         user_prompt_content = f"""
         **Din Berättelse (Kontext):**
         ---
-        {problem_description_for_prompt}
+        {problem_info_for_ulla['beskrivning']}
         ---
-        **Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta att problemet är borta.
+        **Uppgift:** Studenten löste precis problemet. Svara som Ulla och bekräfta glatt att problemet är borta.
+        """
+    else:
+        # This is the main prompt that needs fixing.
+        # We REMOVE the final "Din Uppgift" instruction.
+        technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
+        user_prompt_content = f"""
+        **KÄLLFAKTA (Din enda sanning):**
+        {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
+
+        **Din Berättelse (För din personlighet):**
+        {problem_info_for_ulla['beskrivning']}
+
+        **Hittillsvarande Konversation:**
+        {full_history_string_for_ulla}
+        **Studentens Senaste Meddelande:**
+        {latest_student_message_for_ulla}
         """
 
     messages_for_ulla = [
