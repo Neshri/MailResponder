@@ -454,17 +454,21 @@ def get_evaluator_decision(student_email, problem_description, solution_keywords
     global ollama
     if not EVAL_MODEL:
         logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt."); return "[EJ_LÖST]"
+    # The first item in keywords is a technical description of the problem
+    technical_problem_desc = solution_keywords[0]
+    actionable_solutions = solution_keywords[1:]
 
     logging.info(f"Evaluator AI för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
 
-    evaluator_prompt_content = f"""Tekniskt Problem: "{problem_description}"
-Korrekta Lösningar/lösningsnyckelord: {solution_keywords}
+    evaluator_prompt_content = f"""Ullas Problem: "{problem_description}"
+Teknisk problembeskrivning: "{technical_problem_desc}"
+Korrekta Lösningar/lösningsnyckelord: {actionable_solutions}
 Studentens SENASTE Meddelande:
 ---
 {latest_student_message_cleaned}
 ---
-Uppgift: Innehåller studentens senaste meddelande en lösning som matchar något av lösningsnyckelorden?
-Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
+Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera studentens meddelande noggrant, generera först ett <think>-block med din fullständiga analys, och avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' på en ny rad.
+"""
 
     messages_for_evaluator = [
         {'role': 'system', 'content': EVALUATOR_SYSTEM_PROMPT},
@@ -475,7 +479,7 @@ Svara ENDAST med '[LÖST]' eller '[EJ_LÖST]'."""
         response = ollama.chat(
             model=EVAL_MODEL,
             messages=messages_for_evaluator,
-            options={'temperature': 0.1, 'num_predict': 500},
+            options={'temperature': 0.1, 'num_predict': 2500},
             **ollama_client_args
         )
         raw_eval_reply_from_llm = response['message']['content'].strip()
