@@ -1213,17 +1213,48 @@ if __name__ == "__main__":
                         level_display = level_idx + 1 if level_idx != -1 else "N/A"
                         print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
                         print(f"  Last Updated: {d.get('last_updated')}")
-                        print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
+
+                        # Parse conversation history into chronological order
+                        conversation_history = d.get('full_conversation_history', '')
                         evaluator_responses = json.loads(d.get('evaluator_responses', '[]'))
-                        if evaluator_responses:
-                            print(f"  Evaluator Responses ({len(evaluator_responses)} total):")
-                            for i, resp in enumerate(evaluator_responses, 1):
-                                print(f"    [{i}] {resp['timestamp']}:")
-                                response_lines = resp['response'].split('\n')
-                                for line in response_lines:
-                                    if line.strip():
-                                        print(f"      {line}")
+
+                        print("  Conversation History (Chronological):")
+                        print("=" * 60)
+
+                        # Split conversation by double newlines to separate messages
+                        messages = [msg.strip() for msg in conversation_history.split('\n\n') if msg.strip()]
+
+                        # Pair evaluator responses with student messages (skip the initial Ulla message)
+                        message_index = 0
+                        for i, msg in enumerate(messages):
+                            if msg.startswith("Ulla:") and i == 0:
+                                # Initial Ulla problem description
+                                print(f"  [INITIAL] {msg}")
                                 print()
+                            elif msg.startswith("Anton:") or msg.startswith(f"{get_name_from_email(d.get('student_email'))}:"):
+                                # Student message
+                                print(f"  [STUDENT] {msg}")
+                                print()
+
+                                # Find corresponding evaluator response (if any)
+                                if message_index < len(evaluator_responses):
+                                    eval_resp = evaluator_responses[message_index]
+                                    print(f"  [EVALUATOR] {eval_resp['timestamp']}:")
+                                    response_lines = eval_resp['response'].split('\n')
+                                    for line in response_lines:
+                                        if line.strip():
+                                            print(f"    {line}")
+                                    print()
+
+                                    # Find corresponding Ulla response (next Ulla message after student)
+                                    for j in range(i + 1, len(messages)):
+                                        if messages[j].startswith("Ulla:"):
+                                            print(f"  [ULLA] {messages[j]}")
+                                            print()
+                                            break
+
+                                message_index += 1
+
                         print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
             finally:
