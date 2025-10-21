@@ -1277,46 +1277,59 @@ if __name__ == "__main__":
                             print("  Conversation History (Chronological):")
                             print("=" * 60)
 
-                            # --- NEW, ROBUST LOGIC ---
-                            # 1. Parse all messages (student and Ulla) from the history.
-                            history_messages = [msg.strip() for msg in conversation_history.split('\n\n') if msg.strip()]
+                            # --- CORRECTED LOGIC ---
+                        # 1. Parse all messages and create a timeline of events
+                        history_lines = [line.strip() for line in conversation_history.split('\n\n') if line.strip()]
+                        evaluator_responses = json.loads(d.get('evaluator_responses', '[]'))
 
-                            # 2. Create a unified event timeline.
-                            timeline = []
-                            evaluator_index = 0
+                        timeline = []
+                        evaluator_idx = 0
 
-                            for msg in history_messages:
-                                if msg.startswith("Ulla:"):
-                                    timeline.append({'type': 'ULLA', 'content': msg})
+                        # Start with Ulla's initial prompt
+                        if history_lines:
+                            initial_prompt = history_lines.pop(0)
+                            timeline.append({'type': 'INITIAL', 'content': initial_prompt})
+
+                        # Process the rest of the conversation in pairs (Student -> Ulla)
+                        # We iterate through the remaining history in steps of 2
+                        for i in range(0, len(history_lines), 2):
+                            # Add Student message
+                            student_message = history_lines[i]
+                            timeline.append({'type': 'STUDENT', 'content': student_message.replace("Anton: ", "", 1)})
+
+                            # Add the corresponding Evaluator response
+                            if evaluator_idx < len(evaluator_responses):
+                                timeline.append({'type': 'EVAL', 'data': evaluator_responses[evaluator_idx]})
+                                evaluator_idx += 1
+
+                            # Add Ulla's reply to that student message
+                            if i + 1 < len(history_lines):
+                                ulla_message = history_lines[i+1]
+                                # Handle the final completion message which is from the student
+                                if ulla_message.startswith("Jättebra!"):
+                                     timeline.append({'type': 'STUDENT_COMPLETION', 'content': ulla_message})
                                 else:
-                                    # This is a student message. Add it to the timeline.
-                                    timeline.append({'type': 'STUDENT', 'content': msg})
+                                     timeline.append({'type': 'ULLA', 'content': ulla_message.replace("Ulla: ", "", 1)})
 
-                                    # Now, add the corresponding evaluator response right after it.
-                                    if evaluator_index < len(evaluator_responses):
-                                        eval_event = evaluator_responses[evaluator_index]
-                                        timeline.append({'type': 'EVALUATOR', 'content': eval_event})
-                                        evaluator_index += 1
 
-                            # 3. Print the unified timeline.
-                            for event in timeline:
-                                if event['type'] == 'ULLA':
-                                    # Check if it's the first message
-                                    if timeline.index(event) == 0:
-                                        print(f"  [INITIAL] {event['content']}")
-                                    else:
-                                        print(f"  [ULLA] {event['content']}")
-                                elif event['type'] == 'STUDENT':
-                                    print(f"  [STUDENT] {event['content']}")
-                                elif event['type'] == 'EVALUATOR':
-                                    print(f"  [EVALUATOR] {event['content']['timestamp']}:")
-                                    response_lines = event['content']['response'].split('\n')
-                                    for line in response_lines:
-                                        if line.strip():
-                                            print(f"    {line}")
-                                print() # Add a blank line for readability
+                        # 3. Print the unified timeline
+                        for event in timeline:
+                            if event['type'] == 'INITIAL':
+                                print(f"  [INITIAL] {event['content']}")
+                            elif event['type'] == 'STUDENT':
+                                print(f"  [STUDENT] Anton: {event['content']}")
+                            elif event['type'] == 'EVAL':
+                                print(f"  [EVALUATOR] {event['data']['timestamp']}:")
+                                response_text = event['data']['response'].replace('</end_of_turn>', '').strip()
+                                for line in response_text.split('\n'):
+                                    print(f"    {line.strip()}")
+                            elif event['type'] == 'ULLA':
+                                print(f"  [ULLA] Ulla: {event['content']}")
+                            elif event['type'] == 'STUDENT_COMPLETION':
+                                 print(f"  [STUDENT] {event['content']}")
+                            print() # Add a blank line for readability
 
-                            print("-" * 80)
+                        print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
 
             print("\n--- SLUT DEBUG DB UTSKRIFT ---")
