@@ -44,6 +44,7 @@ if OLLAMA_HOST: ollama_client_args['host'] = OLLAMA_HOST; logging.info(f"Ollama-
 
 DB_FILE = 'conversations.db'
 COMPLETED_DB_FILE = 'completed_conversations.db' # Added for conversation archive
+DEBUG_DB_FILE = 'debug_conversations.db' # Debug database for evaluator responses
 
 GRAPH_API_ENDPOINT = 'https://graph.microsoft.com/v1.0'
 GRAPH_SCOPES = ['https://graph.microsoft.com/.default']
@@ -95,6 +96,7 @@ def init_completed_db():
                 problem_id TEXT NOT NULL,
                 problem_level_index INTEGER NOT NULL,
                 full_conversation_history TEXT NOT NULL,
+                evaluator_response TEXT,
                 completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -105,13 +107,75 @@ def init_completed_db():
     finally:
         if conn: conn.close()
 
-def save_completed_conversation(student_email, problem_id, problem_level_index, full_conversation_history):
+def init_debug_db():
+    conn = None
+    try:
+        conn = sqlite3.connect(DEBUG_DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS debug_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_email TEXT NOT NULL,
+                problem_id TEXT NOT NULL,
+                problem_level_index INTEGER NOT NULL,
+                full_conversation_history TEXT NOT NULL,
+                evaluator_responses TEXT NOT NULL,  -- JSON array of all evaluator interactions
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        logging.info(f"Debug-databas {DEBUG_DB_FILE} för konversationer med evaluator-svar initierad/kontrollerad.")
+    except sqlite3.Error as e:
+        logging.critical(f"Initiering av debug-databas misslyckades: {e}", exc_info=True); raise
+    finally:
+        if conn: conn.close()
+
+def save_debug_conversation(student_email, problem_id, problem_level_index, history_string, evaluator_responses):
+    """Save or update debug conversation with evaluator responses."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DEBUG_DB_FILE)
+        cursor = conn.cursor()
+
+        # Check if conversation already exists
+        cursor.execute('''
+            SELECT id FROM debug_conversations
+            WHERE student_email = ? AND problem_id = ?
+        ''', (student_email, problem_id))
+
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update existing conversation
+            cursor.execute('''
+                UPDATE debug_conversations
+                SET full_conversation_history = ?, evaluator_responses = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (history_string, evaluator_responses, existing[0]))
+        else:
+            # Insert new conversation
+            cursor.execute('''
+                INSERT INTO debug_conversations
+                (student_email, problem_id, problem_level_index, full_conversation_history, evaluator_responses)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (student_email, problem_id, problem_level_index, history_string, evaluator_responses))
+
+        conn.commit()
+        logging.info(f"Debug-konversation sparad för {student_email} (Problem: {problem_id})")
+        return True
+    except sqlite3.Error as e:
+        logging.error(f"DB-fel vid sparande av debug-konversation för {student_email}: {e}", exc_info=True); return False
+    finally:
+        if conn: conn.close()
+
+def save_completed_conversation(student_email, problem_id, problem_level_index, full_conversation_history, evaluator_response=None):
     conn = None
     try:
         conn = sqlite3.connect(COMPLETED_DB_FILE)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO completed_conversations 
+            INSERT INTO completed_conversations
             (student_email, problem_id, problem_level_index, full_conversation_history)
             VALUES (?, ?, ?, ?)
         ''', (student_email, problem_id, problem_level_index, full_conversation_history))
@@ -167,7 +231,7 @@ def set_active_problem(student_email, problem, problem_level_idx, graph_conversa
         cursor = conn.cursor()
         timestamp = datetime.datetime.now()
         initial_history_string = f"Ulla: {problem['start_prompt']}\n\n"
-        
+
         current_level_for_insert, _ = get_student_progress(student_email)
         cursor.execute(
             "INSERT INTO student_progress (student_email, next_level_index, last_active_graph_convo_id) VALUES (?, ?, ?) "
@@ -176,10 +240,14 @@ def set_active_problem(student_email, problem, problem_level_idx, graph_conversa
         )
         # SIMPLIFIED: Only inserts the ID and the history.
         cursor.execute('''
-            REPLACE INTO active_problems 
+            REPLACE INTO active_problems
             (student_email, problem_id, conversation_history, created_at)
             VALUES (?, ?, ?, ?)
         ''', (student_email, problem['id'], initial_history_string, timestamp))
+
+        # Initialize debug conversation with empty evaluator responses
+        save_debug_conversation(student_email, problem['id'], problem_level_idx, initial_history_string, "[]")
+
         conn.commit()
         logging.info(f"Aktivt problem {problem['id']} (Nivå {problem_level_idx + 1}) satt för {student_email}")
         return True
@@ -240,6 +308,22 @@ def append_to_active_problem_history(student_email, text_to_append):
         cursor = conn.cursor()
         if not text_to_append.endswith("\n\n"): text_to_append += "\n\n"
         cursor.execute("UPDATE active_problems SET conversation_history = conversation_history || ? WHERE student_email = ?", (text_to_append, student_email))
+
+        # Also update debug conversation history
+        cursor.execute("SELECT problem_id FROM active_problems WHERE student_email = ?", (student_email,))
+        problem_row = cursor.fetchone()
+        if problem_row:
+            problem_id = problem_row[0]
+            # Get current debug conversation
+            debug_conn = sqlite3.connect(DEBUG_DB_FILE)
+            debug_cursor = debug_conn.cursor()
+            debug_cursor.execute("SELECT full_conversation_history, evaluator_responses FROM debug_conversations WHERE student_email = ? AND problem_id = ?", (student_email, problem_id))
+            debug_row = debug_cursor.fetchone()
+            if debug_row:
+                current_history = debug_row[0] + text_to_append
+                save_debug_conversation(student_email, problem_id, 0, current_history, debug_row[1])  # Keep existing evaluator responses
+            debug_conn.close()
+
         conn.commit()
         logging.info(f"Lade till i historik för aktivt problem för {student_email}")
         return True
@@ -450,10 +534,10 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         logging.error("Misslyckades sätta aktivt problem i DB för ny nivå.")
         return False
     
-def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned):
+def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned, problem_id=None):
     global ollama
     if not EVAL_MODEL:
-        logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt."); return "[EJ_LÖST]"
+        logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt."); return "[EJ_LÖST]", ""
     # The first item in keywords is a technical description of the problem
     technical_problem_desc = solution_keywords[0]
     actionable_solutions = solution_keywords[1:]
@@ -474,7 +558,7 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         {'role': 'system', 'content': EVALUATOR_SYSTEM_PROMPT},
         {'role': 'user', 'content': evaluator_prompt_content}
     ]
-    
+
     try:
         response = ollama.chat(
             model=EVAL_MODEL,
@@ -485,22 +569,50 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         raw_eval_reply_from_llm = response['message']['content'].strip()
         logging.info(f"Evaluator AI ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
         processed_eval_reply = re.sub(r"<think>.*?</think>", "", raw_eval_reply_from_llm, flags=re.DOTALL).strip()
-        
+
         if processed_eval_reply != raw_eval_reply_from_llm:
             logging.info(f"Evaluator AI ({student_email}): Removed <think> block. Original: '{raw_eval_reply_from_llm}', Processed: '{processed_eval_reply}'")
 
+        # Save evaluator response to debug database
+        if problem_id:
+            append_evaluator_response_to_debug(student_email, problem_id, raw_eval_reply_from_llm)
+
         if "[LÖST]" in processed_eval_reply:
             logging.info(f"Evaluator AI ({student_email}): Bedömning [LÖST] (baserat på närvaro i '{processed_eval_reply}')")
-            return "[LÖST]"
+            return "[LÖST]", raw_eval_reply_from_llm
         else:
             if "[EJ_LÖST]" not in processed_eval_reply :
                  logging.warning(f"Evaluator AI ({student_email}): Oväntat svar '{processed_eval_reply}', tolkar som [EJ_LÖST].")
             else:
                 logging.info(f"Evaluator AI ({student_email}): Bedömning [EJ_LÖST] (baserat på frånvaro av '[LÖST]' i '{processed_eval_reply}')")
-            return "[EJ_LÖST]"
+            return "[EJ_LÖST]", raw_eval_reply_from_llm
     except Exception as e:
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
-        return "[EJ_LÖST]"
+        return "[EJ_LÖST]", ""
+
+def append_evaluator_response_to_debug(student_email, problem_id, evaluator_response):
+    """Append evaluator response to the debug conversation."""
+    try:
+        conn = sqlite3.connect(DEBUG_DB_FILE)
+        cursor = conn.cursor()
+
+        # Get current evaluator responses
+        cursor.execute("SELECT evaluator_responses FROM debug_conversations WHERE student_email = ? AND problem_id = ?", (student_email, problem_id))
+        row = cursor.fetchone()
+
+        if row:
+            current_responses = json.loads(row[0]) if row[0] else []
+            current_responses.append({
+                "timestamp": datetime.datetime.now().isoformat(),
+                "response": evaluator_response
+            })
+            new_responses = json.dumps(current_responses, ensure_ascii=False)
+            cursor.execute("UPDATE debug_conversations SET evaluator_responses = ? WHERE student_email = ? AND problem_id = ?", (new_responses, student_email, problem_id))
+            conn.commit()
+
+        conn.close()
+    except Exception as e:
+        logging.error(f"Error appending evaluator response to debug: {e}")
     
 def strip_markdown(text):
     # Remove inline code `text`
@@ -585,16 +697,16 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         return "Åh nej, nu tappade jag visst bort mig lite..."
     
     
-def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info, 
+def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info,
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
                                    active_problem_convo_id_db,
                                    email_data_for_result):
     logging.info(f"LLM-tråd (_llm_evaluation_and_reply_task) startad för {student_email}")
 
-    evaluator_marker = get_evaluator_decision(
-        student_email, 
-        problem_info['beskrivning'], 
-        problem_info['losning_nyckelord'], 
+    evaluator_marker, evaluator_raw_response = get_evaluator_decision(
+        student_email,
+        problem_info['beskrivning'],
+        problem_info['losning_nyckelord'],
         latest_student_message_cleaned
     )
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
@@ -612,6 +724,7 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         "email_data": email_data_for_result,
         "ulla_final_reply_body": ulla_final_reply_text,
         "is_solved": is_solved_by_evaluator,
+        "evaluator_response": evaluator_raw_response,
         "error": False,
         "send_reply": bool(ulla_final_reply_text),
         "active_problem_level_idx": problem_level_idx_for_prompt,
@@ -624,7 +737,7 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         "full_history_string": full_history_string, # Pass this through for archiving
         "has_images": email_data_for_result["has_images"]
     }
-    
+
     if not ulla_final_reply_text:
         result_package["error"] = True
         result_package["send_reply"] = False
@@ -837,7 +950,8 @@ def graph_check_emails():
                         student_email=email_data["sender_email"],
                         problem_id=result_package["active_problem_info_id"],
                         problem_level_index=result_package["active_problem_level_idx"],
-                        full_conversation_history=final_history_for_archive
+                        full_conversation_history=final_history_for_archive,
+                        evaluator_response=result_package.get("evaluator_response")
                     )
 
                     clear_active_problem(email_data["sender_email"])
@@ -978,6 +1092,7 @@ if __name__ == "__main__":
     try:
         init_db()
         init_completed_db()
+        init_debug_db()
     except Exception as db_err:
         logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
 
@@ -1067,6 +1182,52 @@ if __name__ == "__main__":
 
         email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
         print_db_content(email_filter=email_to_filter)
+        exit()
+    elif len(sys.argv) > 1 and sys.argv[1].lower() == "--printdebugdb":
+        def print_debug_db_content(email_filter=None, problem_filter=None):
+            if email_filter or problem_filter:
+                print(f"--- DEBUG DB UTSKRIFT (Filtrerat på: email={email_filter}, problem={problem_filter}) ---")
+            else:
+                print("--- DEBUG DB UTSKRIFT (All data) ---")
+
+            # --- Print Debug Conversations ---
+            conn_ddb = None; print("\n--- UTSKRIFT DEBUG CONVERSATIONS ---")
+            try:
+                conn_ddb = sqlite3.connect(DEBUG_DB_FILE); conn_ddb.row_factory = sqlite3.Row; c_ddb = conn_ddb.cursor()
+                query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
+                params = []
+                if email_filter:
+                    query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated DESC"
+                    params.append(email_filter)
+                elif problem_filter:
+                    query = "SELECT * FROM debug_conversations WHERE problem_id = ? ORDER BY last_updated DESC"
+                    params.append(problem_filter)
+                c_ddb.execute(query, params)
+                rows_ddb = c_ddb.fetchall()
+                if not rows_ddb: print("Tabellen debug_conversations är tom (eller inget matchar filter).")
+                else:
+                    for r_ddb in rows_ddb:
+                        d = dict(r_ddb)
+                        level_idx = d.get('problem_level_index', -1)
+                        level_display = level_idx + 1 if level_idx != -1 else "N/A"
+                        print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
+                        print(f"  Last Updated: {d.get('last_updated')}")
+                        print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
+                        evaluator_responses = json.loads(d.get('evaluator_responses', '[]'))
+                        if evaluator_responses:
+                            print(f"  Evaluator Responses ({len(evaluator_responses)} total):")
+                            for i, resp in enumerate(evaluator_responses, 1):
+                                print(f"    [{i}] {resp['timestamp']}: {resp['response'][:200]}{'...' if len(resp['response']) > 200 else ''}")
+                        print("-" * 80)
+            except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
+            finally:
+                if conn_ddb: conn_ddb.close()
+
+            print("\n--- SLUT DEBUG DB UTSKRIFT ---")
+
+        email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
+        problem_filter = sys.argv[3] if len(sys.argv) > 3 else None
+        print_debug_db_content(email_filter=email_to_filter, problem_filter=problem_filter)
         exit()
     elif len(sys.argv) > 1 and sys.argv[1].lower() == "--emptyinbox":
         logging.info("--- EMPTYING INBOX (via --emptyinbox command) ---")
