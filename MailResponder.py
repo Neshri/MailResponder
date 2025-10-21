@@ -75,7 +75,7 @@ def initialize_database(db_file, schema_sql, db_name_for_logging):
     try:
         with get_db_connection(db_file) as conn:
             cursor = conn.cursor()
-            cursor.execute(schema_sql)
+            cursor.executescript(schema_sql)
             conn.commit()
         logging.info(f"Database {db_file} for {db_name_for_logging} initialized/verified.")
     except sqlite3.Error:
