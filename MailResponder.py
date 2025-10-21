@@ -393,65 +393,74 @@ def graph_send_email(recipient_email, subject, body_content, in_reply_to_message
     logging.error(f"Misslyckades skicka e-post. Svar: {response}"); return False
 
 def clean_email_body(body_text, original_sender_email_for_attribution=None):
-    if not body_text: return ""
+    """
+    Cleans the body of an email by finding the most likely reply header and truncating the message there.
+    It checks for multiple common formats in a specific order of reliability.
+    """
+    if not body_text:
+        return ""
 
-    # --- NEW: A regex pattern to match common multi-line reply headers ---
-    # This looks for "On [date]" or "Den [date]", followed by any characters (including newlines),
-    # and then "wrote:" or "skrev:". The re.DOTALL flag allows '.' to match newlines.
-    date_header_pattern = re.compile(
-        r"^(on|den)\s+.*(wrote|skrev):",
+    # 1. The Outlook/Exchange Header (very reliable)
+    # This looks for the horizontal line <hr> often used by Outlook, OR
+    # a line starting with "From:" or "Från:" which indicates the start of a metadata block.
+    # We split the text at this point and take what's before it.
+    outlook_split_patterns = [
+        re.compile(r'________________________________', re.IGNORECASE),
+        re.compile(r'^from:\s*.*', re.IGNORECASE | re.MULTILINE),
+        re.compile(r'^från:\s*.*', re.IGNORECASE | re.MULTILINE)
+    ]
+    for pattern in outlook_split_patterns:
+        match = pattern.search(body_text)
+        if match:
+            cleaned_text = body_text[:match.start()].strip()
+            logging.info("Outlook-style reply header found and stripped.")
+            return cleaned_text
+
+    # 2. The Gmail/Apple Mail "On [date], [sender] wrote:" Header (very reliable)
+    # This pattern is now more generic to catch more languages. It looks for a date-like
+    # pattern followed by a sender and a verb like "wrote/skrev/a écrit".
+    gmail_style_pattern = re.compile(
+        r"on\s|den\s|le\s|am\s"  # Common starting words for dates in different languages
+        r".*\n?.*(wrote|skrev|a écrit|schrieb):", # Date/time, sender, and the verb
         re.IGNORECASE | re.DOTALL
     )
-
-    # Check if this pattern exists anywhere in the full body first.
-    match = date_header_pattern.search(body_text)
+    match = gmail_style_pattern.search(body_text)
     if match:
-        # If a match is found, take only the text that appeared BEFORE the match.
-        final_text = body_text[:match.start()].strip()
-        logging.info("Multi-line reply header found and stripped.")
-        return final_text
+        cleaned_text = body_text[:match.start()].strip()
+        logging.info("Gmail/Apple Mail-style reply header found and stripped.")
+        return cleaned_text
 
-    # --- If the multi-line pattern is not found, fall back to the line-by-line method ---
-    # This handles older formats and simple ">" quoting.
+    # 3. The "---- Original Message ----" Header (less common but reliable)
+    original_message_pattern = re.compile(r'---- original message ----', re.IGNORECASE)
+    match = original_message_pattern.search(body_text)
+    if match:
+        cleaned_text = body_text[:match.start()].strip()
+        logging.info("'Original Message'-style reply header found and stripped.")
+        return cleaned_text
+
+    # 4. Fallback: Line-by-line check for ">" (least reliable, used as a last resort)
+    # If no headers were found, we assume it's a simple plain-text reply.
+    # We will only strip from the *bottom up* to avoid cutting inline quotes.
     lines = body_text.splitlines()
-    cleaned_lines = []
-    
-    q_sw = ["från:", "--ursprungl meddelande--"]
-    q_en = ["from:", "--original message--"]
-    if original_sender_email_for_attribution:
-        q_sw.append(f"skrev {original_sender_email_for_attribution.lower()}")
-    
-    all_q = [q.lower() for q in q_sw + q_en]
-    found_q = False
-
-    for line in lines:
-        s_line_lower = line.strip().lower()
-
-        # Simplified check, as the complex header is handled above
-        if ((" skrev " in s_line_lower or " wrote " in s_line_lower) and
-            original_sender_email_for_attribution and
-            original_sender_email_for_attribution.lower() in s_line_lower):
-            found_q = True
+    last_unquoted_line_index = -1
+    for i in range(len(lines) - 1, -1, -1):
+        if not lines[i].strip().startswith('>'):
+            last_unquoted_line_index = i
             break
-        
-        for indicator in all_q:
-            if s_line_lower.startswith(indicator):
-                found_q = True
-                break
-        
-        if found_q:
-            break
-        
-        if not line.strip().startswith('>'):
-            cleaned_lines.append(line)
-
-    final_text = "\n".join(cleaned_lines).strip()
     
-    if not final_text.strip() and body_text.strip():
-        logging.warning("Body cleaning resulted in an empty string; falling back to original body to prevent data loss.")
-        return body_text.strip()
+    if last_unquoted_line_index != -1:
+        # Join only the lines up to the last unquoted one.
+        cleaned_lines = lines[:last_unquoted_line_index + 1]
+        fallback_text = "\n".join(cleaned_lines).strip()
+    else:
+        # This happens if the ENTIRE message is quoted. We return an empty string.
+        fallback_text = ""
+        
+    # Only log if we actually changed something.
+    if len(fallback_text) < len(body_text):
+        logging.info("No reliable header found; performed fallback cleaning of '>' characters from the end of the message.")
 
-    return final_text
+    return fallback_text
     
 
 def mark_email_as_read(graph_message_id):
