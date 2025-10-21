@@ -700,7 +700,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info,
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
                                    active_problem_convo_id_db,
-                                   email_data_for_result):
+                                   email_data_for_result, problem_id=None):
     logging.info(f"LLM-tråd (_llm_evaluation_and_reply_task) startad för {student_email}")
 
     evaluator_marker, evaluator_raw_response = get_evaluator_decision(
@@ -708,7 +708,7 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         problem_info['beskrivning'],
         problem_info['losning_nyckelord'],
         latest_student_message_cleaned,
-        problem_info['id']
+        problem_id or problem_info['id']
     )
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 
@@ -862,7 +862,8 @@ def graph_check_emails():
                 "problem_info": active_problem_info,
                 "latest_student_message_cleaned": body_for_llm_task,
                 "problem_level_idx_for_prompt": active_problem_level_idx_db,
-                "active_problem_convo_id_db": active_problem_convo_id_db
+                "active_problem_convo_id_db": active_problem_convo_id_db,
+                "problem_id": active_problem_info['id']
             })
         else: 
             emails_to_process_sequentially.append({
@@ -879,14 +880,15 @@ def graph_check_emails():
         with ThreadPoolExecutor(max_workers=1) as executor: 
             future_to_task_package = { 
                 executor.submit(
-                    _llm_evaluation_and_reply_task, 
-                    task["email_data_for_result"]["sender_email"], 
-                    task["full_history_string"], 
+                    _llm_evaluation_and_reply_task,
+                    task["email_data_for_result"]["sender_email"],
+                    task["full_history_string"],
                     task["problem_info"],
-                    task["latest_student_message_cleaned"], 
+                    task["latest_student_message_cleaned"],
                     task["problem_level_idx_for_prompt"],
-                    task["active_problem_convo_id_db"], 
-                    task["email_data_for_result"]      
+                    task["active_problem_convo_id_db"],
+                    task["email_data_for_result"],
+                    task.get("problem_id")
                 ): task for task in llm_tasks_to_submit
             }
             for future in as_completed(future_to_task_package):
