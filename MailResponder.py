@@ -1224,21 +1224,25 @@ if __name__ == "__main__":
                         # Split conversation by double newlines to separate messages
                         messages = [msg.strip() for msg in conversation_history.split('\n\n') if msg.strip()]
 
-                        # Pair evaluator responses with student messages (skip the initial Ulla message)
-                        message_index = 0
+                        # Process messages in chronological order
+                        student_message_count = 0
                         for i, msg in enumerate(messages):
                             if msg.startswith("Ulla:") and i == 0:
                                 # Initial Ulla problem description
                                 print(f"  [INITIAL] {msg}")
                                 print()
-                            elif msg.startswith("Anton:") or msg.startswith(f"{get_name_from_email(d.get('student_email'))}:"):
-                                # Student message
+                            elif msg.startswith("Ulla:") and i > 0:
+                                # Ulla response - should come after student message and evaluator response
+                                print(f"  [ULLA] {msg}")
+                                print()
+                            elif not msg.startswith("Ulla:"):
+                                # Student message (any message that doesn't start with Ulla:)
                                 print(f"  [STUDENT] {msg}")
                                 print()
 
                                 # Find corresponding evaluator response (if any)
-                                if message_index < len(evaluator_responses):
-                                    eval_resp = evaluator_responses[message_index]
+                                if student_message_count < len(evaluator_responses):
+                                    eval_resp = evaluator_responses[student_message_count]
                                     print(f"  [EVALUATOR] {eval_resp['timestamp']}:")
                                     response_lines = eval_resp['response'].split('\n')
                                     for line in response_lines:
@@ -1246,14 +1250,7 @@ if __name__ == "__main__":
                                             print(f"    {line}")
                                     print()
 
-                                    # Find corresponding Ulla response (next Ulla message after student)
-                                    for j in range(i + 1, len(messages)):
-                                        if messages[j].startswith("Ulla:"):
-                                            print(f"  [ULLA] {messages[j]}")
-                                            print()
-                                            break
-
-                                message_index += 1
+                                student_message_count += 1
 
                         print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
