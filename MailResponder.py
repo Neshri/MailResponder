@@ -531,6 +531,53 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         return False
     
 
+def append_evaluator_response_to_debug(student_email, problem_id, evaluator_response_text):
+    """
+    Appends a new evaluator response to the JSON array in the debug database for a specific conversation.
+    """
+    try:
+        with get_db_connection(DEBUG_DB_FILE) as conn:
+            cursor = conn.cursor()
+
+            # 1. Get the current JSON array of responses
+            cursor.execute('''
+                SELECT evaluator_responses FROM debug_conversations
+                WHERE student_email = ? AND problem_id = ?
+            ''', (student_email, problem_id))
+
+            row = cursor.fetchone()
+            if not row:
+                logging.warning(f"Debug DB: No active conversation found for {student_email} (Problem: {problem_id}) to append evaluator response.")
+                return False
+
+            # 2. Decode the JSON, append the new response, and re-encode
+            try:
+                evaluator_responses_list = json.loads(row[0])
+            except json.JSONDecodeError:
+                evaluator_responses_list = [] # Start fresh if data is corrupt
+
+            new_response_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "response": evaluator_response_text
+            }
+            evaluator_responses_list.append(new_response_entry)
+
+            new_evaluator_responses_json = json.dumps(evaluator_responses_list)
+
+            # 3. Update the database with the new JSON array
+            cursor.execute('''
+                UPDATE debug_conversations
+                SET evaluator_responses = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE student_email = ? AND problem_id = ?
+            ''', (new_evaluator_responses_json, student_email, problem_id))
+
+            conn.commit()
+        logging.info(f"Appended evaluator response to debug conversation for {student_email} (Problem: {problem_id})")
+        return True
+    except sqlite3.Error:
+        # The context manager will log the detailed error.
+        return False
+
 def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned, problem_id=None):
     global ollama
     if not EVAL_MODEL:
