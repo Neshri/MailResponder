@@ -1218,7 +1218,12 @@ if __name__ == "__main__":
                         if evaluator_responses:
                             print(f"  Evaluator Responses ({len(evaluator_responses)} total):")
                             for i, resp in enumerate(evaluator_responses, 1):
-                                print(f"    [{i}] {resp['timestamp']}: {resp['response'][:200]}{'...' if len(resp['response']) > 200 else ''}")
+                                print(f"    [{i}] {resp['timestamp']}:")
+                                response_lines = resp['response'].split('\n')
+                                for line in response_lines:
+                                    if line.strip():
+                                        print(f"      {line}")
+                                print()
                         print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
             finally:
