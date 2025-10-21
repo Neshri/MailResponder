@@ -1264,8 +1264,16 @@ if __name__ == "__main__":
 
                             # Parse conversation history into chronological order
                             conversation_history = d.get('full_conversation_history', '')
-                            evaluator_responses = json.loads(d.get('evaluator_responses', '[]'))
-
+                            evaluator_responses_json = d.get('evaluator_responses', '[]')
+                            evaluator_responses = json.loads(evaluator_responses_json)
+    
+                            # --- ADD THIS BLOCK FOR RAW DEBUGGING ---
+                            print("\n  --- RAW DATA ---")
+                            print(f"  Raw Evaluator Responses JSON ({len(evaluator_responses)} entries):")
+                            print(evaluator_responses_json)
+                            print("  ----------------\n")
+                            # --- END OF BLOCK ---
+    
                             print("  Conversation History (Chronological):")
                             print("=" * 60)
 
