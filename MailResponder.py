@@ -707,7 +707,8 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         student_email,
         problem_info['beskrivning'],
         problem_info['losning_nyckelord'],
-        latest_student_message_cleaned
+        latest_student_message_cleaned,
+        problem_info['id']
     )
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 

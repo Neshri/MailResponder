@@ -10,6 +10,7 @@ The system is built to help IT support students practice their diagnostic, commu
 -   **Multi-Level Problem Catalogue:** Problems are defined in `prompts.py` and structured into multiple difficulty levels, unlocked as the student succeeds.
 -   **Persistent Student Tracking:** A SQLite database (`conversations.db`) tracks each student's progress, current level, and active conversation.
 -   **Conversation Archiving:** Saves the full history of every completed conversation to a separate archive database (`completed_conversations.db`) for later review and analysis.
+-   **Debug Database:** Maintains a separate debug database (`debug_conversations.db`) containing full conversation histories with complete evaluator AI responses for debugging and analysis, ensuring no debug information appears in user-facing conversations.
 -   **Dual-LLM Architecture:**
     -   **Evaluator AI:** A strict, logical model that determines if a student's suggestion correctly solves the problem.
     -   **Persona AI:** A creative model that plays the role of Ulla, responding conversationally based on the Evaluator's verdict.
@@ -173,6 +174,19 @@ python MailResponder.py &
     python MailResponder.py --printdb student@example.com
     ```
 
+-   **Print Debug Database:**
+    Prints the contents of the debug database including full evaluator AI responses. Useful for debugging evaluator behavior and analyzing conversation patterns.
+    ```bash
+    # Print all debug data
+    python MailResponder.py --printdebugdb
+
+    # Print debug data for a specific student
+    python MailResponder.py --printdebugdb student@example.com
+
+    # Print debug data for a specific problem
+    python MailResponder.py --printdebugdb "" L1_P001
+    ```
+
 -   **Empty the Inbox:** Deletes **ALL** emails from the bot's inbox. Use with caution.
     ```bash
     python MailResponder.py --emptyinbox
@@ -186,6 +200,7 @@ python MailResponder.py &
 ├── prompts.py                # Contains all LLM system prompts and the problem catalogues.
 ├── conversations.db          # SQLite database for tracking student progress and active problems.
 ├── completed_conversations.db  # Archive database for all solved conversations.
+├── debug_conversations.db    # Debug database containing full conversations with evaluator AI responses.
 ├── .env                      # Holds all secrets and configuration variables (MUST be ignored by git).
 └── requirements.txt          # List of Python dependencies.
 ```
