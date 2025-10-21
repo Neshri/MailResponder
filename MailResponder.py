@@ -1277,36 +1277,44 @@ if __name__ == "__main__":
                             print("  Conversation History (Chronological):")
                             print("=" * 60)
 
-                            # Split conversation by double newlines to separate messages
-                            messages = [msg.strip() for msg in conversation_history.split('\n\n') if msg.strip()]
+                            # --- NEW, ROBUST LOGIC ---
+                            # 1. Parse all messages (student and Ulla) from the history.
+                            history_messages = [msg.strip() for msg in conversation_history.split('\n\n') if msg.strip()]
 
-                            # Process messages in chronological order
-                            student_message_count = 0
-                            for i, msg in enumerate(messages):
-                                if msg.startswith("Ulla:") and i == 0:
-                                    # Initial Ulla problem description
-                                    print(f"  [INITIAL] {msg}")
-                                    print()
-                                elif msg.startswith("Ulla:") and i > 0:
-                                    # Ulla response - should come after student message and evaluator response
-                                    print(f"  [ULLA] {msg}")
-                                    print()
-                                elif not msg.startswith("Ulla:"):
-                                    # Student message (any message that doesn't start with Ulla:)
-                                    print(f"  [STUDENT] {msg}")
-                                    print()
+                            # 2. Create a unified event timeline.
+                            timeline = []
+                            evaluator_index = 0
 
-                                    # Find corresponding evaluator response (if any)
-                                    if student_message_count < len(evaluator_responses):
-                                        eval_resp = evaluator_responses[student_message_count]
-                                        print(f"  [EVALUATOR] {eval_resp['timestamp']}:")
-                                        response_lines = eval_resp['response'].split('\n')
-                                        for line in response_lines:
-                                            if line.strip():
-                                                print(f"    {line}")
-                                        print()
+                            for msg in history_messages:
+                                if msg.startswith("Ulla:"):
+                                    timeline.append({'type': 'ULLA', 'content': msg})
+                                else:
+                                    # This is a student message. Add it to the timeline.
+                                    timeline.append({'type': 'STUDENT', 'content': msg})
 
-                                    student_message_count += 1
+                                    # Now, add the corresponding evaluator response right after it.
+                                    if evaluator_index < len(evaluator_responses):
+                                        eval_event = evaluator_responses[evaluator_index]
+                                        timeline.append({'type': 'EVALUATOR', 'content': eval_event})
+                                        evaluator_index += 1
+
+                            # 3. Print the unified timeline.
+                            for event in timeline:
+                                if event['type'] == 'ULLA':
+                                    # Check if it's the first message
+                                    if timeline.index(event) == 0:
+                                        print(f"  [INITIAL] {event['content']}")
+                                    else:
+                                        print(f"  [ULLA] {event['content']}")
+                                elif event['type'] == 'STUDENT':
+                                    print(f"  [STUDENT] {event['content']}")
+                                elif event['type'] == 'EVALUATOR':
+                                    print(f"  [EVALUATOR] {event['content']['timestamp']}:")
+                                    response_lines = event['content']['response'].split('\n')
+                                    for line in response_lines:
+                                        if line.strip():
+                                            print(f"    {line}")
+                                print() # Add a blank line for readability
 
                             print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
