@@ -757,7 +757,8 @@ def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_i
         "references_for_send": f"{email_data_for_result['references_header_value'] if email_data_for_result['references_header_value'] else ''} {email_data_for_result['internet_message_id']}".strip(),
         "convo_id_for_send": email_data_for_result["graph_conversation_id_incoming"] or active_problem_convo_id_db,
         "full_history_string": full_history_string, # Pass this through for archiving
-        "has_images": email_data_for_result["has_images"]
+        "has_images": email_data_for_result["has_images"],
+        "student_entry_for_db": student_entry_for_db
     }
 
     if not ulla_final_reply_text:
@@ -896,11 +897,7 @@ def graph_check_emails():
             
             student_name = get_name_from_email(email_data["sender_email"])
             student_entry_for_db = f"{student_name}: {body_for_llm_task}\n\n"
-            if active_hist_str.strip().endswith(student_entry_for_db.strip()):
-                logging.warning(f"Main: Meddelande {email_data['graph_msg_id']} från {email_data['sender_email']} verkar vara en dubblett. Ignorerar för att förhindra dubbel bearbetning.")
-                continue
-            append_to_active_problem_history(email_data["sender_email"], student_entry_for_db)
-            
+
             llm_tasks_to_submit.append({
                 "email_data_for_result": email_data,
                 "full_history_string": active_hist_str + student_entry_for_db,
@@ -908,6 +905,7 @@ def graph_check_emails():
                 "latest_student_message_cleaned": body_for_llm_task,
                 "problem_level_idx_for_prompt": active_problem_level_idx_db,
                 "active_problem_convo_id_db": active_problem_convo_id_db,
+                "student_entry_for_db": student_entry_for_db,
                 "problem_id": active_problem_info['id']
             })
         else: 
@@ -986,10 +984,14 @@ def graph_check_emails():
             reply_s = result_package["reply_subject"] 
             if not reply_s.lower().startswith("re:"): reply_s = f"Re: {result_package['reply_subject']}"
 
-            if graph_send_email(email_data["sender_email"], reply_s, final_ulla_reply, 
-                                result_package["in_reply_to_for_send"], 
-                                result_package["references_for_send"], 
+            if graph_send_email(email_data["sender_email"], reply_s, final_ulla_reply,
+                                result_package["in_reply_to_for_send"],
+                                result_package["references_for_send"],
                                 result_package["convo_id_for_send"]):
+                # FIRST, save the student's message that we passed through.
+                append_to_active_problem_history(email_data["sender_email"], result_package["student_entry_for_db"])
+
+                # SECOND, save Ulla's reply.
                 append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
                 if is_solved:
                     # --- Save the completed conversation before clearing it ---

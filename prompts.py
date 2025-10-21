@@ -103,6 +103,7 @@ PROBLEM_CATALOGUES = [
             "id": "L1_P004",
             "beskrivning": "Jag försöker spela musik i mitt gamla musikprogram, men det kommer inget ljud ur högtalarna, fastän programmet ser ut att spela. Jag tittade i ljudinställningarna, och där står det att 'Hörlurar' är valt som standard, men jag har ju inga hörlurar i!",
             "tekniska_fakta": {
+                "operativsystem": "Windows 7",
                 "musikprogram": "Winamp 5.6",
                 "högtalare": "Logitech S120 (kopplade till gröna uttaget)",
                 "ljudenhet": "'Hörlurar (Realtek High Definition Audio)' är inställd som standard"
