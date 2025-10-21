@@ -1262,74 +1262,69 @@ if __name__ == "__main__":
                             print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
                             print(f"  Last Updated: {d.get('last_updated')}")
 
-                            # Parse conversation history into chronological order
+                            # --- CORRECTED LOGIC (v4) ---
+                            # Get the raw data
                             conversation_history = d.get('full_conversation_history', '')
                             evaluator_responses_json = d.get('evaluator_responses', '[]')
                             evaluator_responses = json.loads(evaluator_responses_json)
-    
-                            # --- ADD THIS BLOCK FOR RAW DEBUGGING ---
+
+                            # Print raw data for debugging
                             print("\n  --- RAW DATA ---")
                             print(f"  Raw Evaluator Responses JSON ({len(evaluator_responses)} entries):")
-                            print(evaluator_responses_json)
+                            # Use json.dumps for pretty printing the raw JSON
+                            print(json.dumps(evaluator_responses, indent=2, ensure_ascii=False))
                             print("  ----------------\n")
-                            # --- END OF BLOCK ---
-    
+                            
                             print("  Conversation History (Chronological):")
                             print("=" * 60)
 
-                            # --- CORRECTED LOGIC ---
-                        # 1. Parse all messages and create a timeline of events
-                        history_lines = [line.strip() for line in conversation_history.split('\n\n') if line.strip()]
-                        evaluator_responses = json.loads(d.get('evaluator_responses', '[]'))
+                            # 1. Parse all messages from the history string.
+                            history_lines = [line.strip() for line in conversation_history.split('\n\n') if line.strip()]
 
-                        timeline = []
-                        evaluator_idx = 0
+                            # 2. Build the final timeline by iterating through history and inserting evaluations sequentially.
+                            final_timeline = []
+                            evaluator_index = 0
 
-                        # Start with Ulla's initial prompt
-                        if history_lines:
-                            initial_prompt = history_lines.pop(0)
-                            timeline.append({'type': 'INITIAL', 'content': initial_prompt})
+                            for line in history_lines:
+                                # Differentiate between Ulla, Student, and final Student Completion messages
+                                if line.startswith("Ulla:"):
+                                    if not final_timeline: # The very first message is the initial prompt
+                                        final_timeline.append({'type': 'INITIAL', 'content': line})
+                                    else:
+                                        final_timeline.append({'type': 'ULLA', 'content': line})
+                                
+                                elif line.lower().startswith("jättebra!"):
+                                    final_timeline.append({'type': 'STUDENT_COMPLETION', 'content': line})
 
-                        # Process the rest of the conversation in pairs (Student -> Ulla)
-                        # We iterate through the remaining history in steps of 2
-                        for i in range(0, len(history_lines), 2):
-                            # Add Student message
-                            student_message = history_lines[i]
-                            timeline.append({'type': 'STUDENT', 'content': student_message.replace("Anton: ", "", 1)})
+                                else: # This is a standard student message that requires an evaluation
+                                    final_timeline.append({'type': 'STUDENT', 'content': line})
+                                    
+                                    # Immediately add the next available evaluator response in sequence
+                                    if evaluator_index < len(evaluator_responses):
+                                        final_timeline.append({'type': 'EVAL', 'data': evaluator_responses[evaluator_index]})
+                                        evaluator_index += 1
 
-                            # Add the corresponding Evaluator response
-                            if evaluator_idx < len(evaluator_responses):
-                                timeline.append({'type': 'EVAL', 'data': evaluator_responses[evaluator_idx]})
-                                evaluator_idx += 1
-
-                            # Add Ulla's reply to that student message
-                            if i + 1 < len(history_lines):
-                                ulla_message = history_lines[i+1]
-                                # Handle the final completion message which is from the student
-                                if ulla_message.startswith("Jättebra!"):
-                                     timeline.append({'type': 'STUDENT_COMPLETION', 'content': ulla_message})
-                                else:
-                                     timeline.append({'type': 'ULLA', 'content': ulla_message.replace("Ulla: ", "", 1)})
-
-
-                        # 3. Print the unified timeline
-                        for event in timeline:
-                            if event['type'] == 'INITIAL':
-                                print(f"  [INITIAL] {event['content']}")
-                            elif event['type'] == 'STUDENT':
-                                print(f"  [STUDENT] Anton: {event['content']}")
-                            elif event['type'] == 'EVAL':
-                                print(f"  [EVALUATOR] {event['data']['timestamp']}:")
-                                response_text = event['data']['response'].replace('</end_of_turn>', '').strip()
-                                for line in response_text.split('\n'):
-                                    print(f"    {line.strip()}")
-                            elif event['type'] == 'ULLA':
-                                print(f"  [ULLA] Ulla: {event['content']}")
-                            elif event['type'] == 'STUDENT_COMPLETION':
-                                 print(f"  [STUDENT] {event['content']}")
-                            print() # Add a blank line for readability
-
-                        print("-" * 80)
+                            # 3. Print the correctly assembled timeline.
+                            for event in final_timeline:
+                                if event['type'] == 'INITIAL':
+                                    print(f"  [INITIAL] {event['content']}")
+                                elif event['type'] == 'STUDENT':
+                                    print(f"  [STUDENT] {event['content']}")
+                                elif event['type'] == 'STUDENT_COMPLETION':
+                                    print(f"  [STUDENT] {event['content']}")
+                                elif event['type'] == 'EVAL':
+                                    print(f"  [EVALUATOR] {event['data']['timestamp']}:")
+                                    # Clean up response text from markdown and other artifacts
+                                    response_text = event['data']['response'].replace('</end_of_turn>', '').strip()
+                                    response_text = re.sub(r'^```\s*|\s*```$', '', response_text)
+                                    for line in response_text.split('\n'):
+                                        if line.strip():
+                                            print(f"    {line}")
+                                elif event['type'] == 'ULLA':
+                                    print(f"  [ULLA] {event['content']}")
+                                print() # Add a blank line for readability
+                            
+                            print("-" * 80)
             except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
 
             print("\n--- SLUT DEBUG DB UTSKRIFT ---")
