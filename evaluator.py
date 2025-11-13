@@ -54,14 +54,26 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         if problem_id:
             append_evaluator_response_to_debug(student_email, problem_id, raw_eval_reply_from_llm)
 
-        if "[LÖST]" in processed_eval_reply:
-            logging.info(f"Evaluator AI ({student_email}): Bedömning [LÖST] (baserat på närvaro i '{processed_eval_reply}')")
+        # Extract the final decision from the LLM response
+        lines = processed_eval_reply.strip().split('\n')
+        final_decision = ""
+        
+        # Look for [LÖST] or [EJ_LÖST] at the end of the response
+        for line in reversed(lines):
+            line = line.strip()
+            match = re.match(r'^\s*\[(LÖST|EJ_LÖST)\]\s*$', line)
+            if match:
+                final_decision = f"[{match.group(1)}]"
+                break
+        
+        if final_decision == "[LÖST]":
+            logging.info(f"Evaluator AI ({student_email}): Bedömning [LÖST] (baserat på LLM:s slutgiltiga beslut)")
             return "[LÖST]", raw_eval_reply_from_llm
+        elif final_decision == "[EJ_LÖST]":
+            logging.info(f"Evaluator AI ({student_email}): Bedömning [EJ_LÖST] (baserat på LLM:s slutgiltiga beslut)")
+            return "[EJ_LÖST]", raw_eval_reply_from_llm
         else:
-            if "[EJ_LÖST]" not in processed_eval_reply:
-                logging.warning(f"Evaluator AI ({student_email}): Oväntat svar '{processed_eval_reply}', tolkar som [EJ_LÖST].")
-            else:
-                logging.info(f"Evaluator AI ({student_email}): Bedömning [EJ_LÖST] (baserat på frånvaro av '[LÖST]' i '{processed_eval_reply}')")
+            logging.warning(f"Evaluator AI ({student_email}): Kunde inte hitta ett slutgiltigt beslut i '{processed_eval_reply}', tolkar som [EJ_LÖST].")
             return "[EJ_LÖST]", raw_eval_reply_from_llm
     except Exception as e:
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
