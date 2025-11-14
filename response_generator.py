@@ -7,19 +7,47 @@ from llm_client import chat_with_model
 from email_parser import get_name_from_email
 
 def strip_markdown(text):
-    # Remove inline code `text`
+    # (No changes to this function)
     text = re.sub(r'`([^`]+)`', r'\1', text)
-    # Remove bold/italic **text** or __text__
     text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)
-    # Remove italic *text* or _text_
     text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)
-    # Remove links [text](url) -> text
     text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    # Remove headers # ## etc at start of line
     text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
-    # Remove list markers - * + at start of line
     text = re.sub(r'^[-\*\+]\s*', '', text, flags=re.MULTILINE)
     return text
+
+def cap_history(full_history_string, max_turns=4):
+    """
+    Caps the conversation history to the last `max_turns`.
+
+    A "turn" is defined as two messages. This function identifies individual
+    messages by searching for header patterns (e.g., "Name: ") at the start
+    of lines. This method allows it to correctly handle messages that
+    contain newline characters.
+    """
+    if not full_history_string:
+        return ""
+
+    max_messages = max_turns * 2
+
+    # Regex to find the character index of each message's starting header.
+    # A header is defined as a sequence of non-whitespace characters followed
+    # by a colon at the beginning of a line.
+    message_start_markers = list(re.finditer(r'^\S+:\s', full_history_string, re.MULTILINE))
+
+    # If the number of found messages is not greater than the maximum, return the original string.
+    if len(message_start_markers) <= max_messages:
+        return full_history_string.strip()
+
+    # Determine the character index where the truncated history should begin.
+    truncation_start_index = message_start_markers[-max_messages].start()
+
+    # Extract the relevant part of the history string.
+    capped_history = full_history_string[truncation_start_index:].strip()
+
+    # Prepend an indicator that the history has been truncated.
+    return f"[...tidigare konversation...]\n{capped_history}"
+
 
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
                            latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
@@ -32,12 +60,9 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    # The system prompt contains the rules and persona. This remains the same.
     system_prompt_content = ULLA_PERSONA_PROMPT
 
-    # --- REVISED USER PROMPT LOGIC ---
     if evaluator_decision_marker == "[LÖST]":
-        # This prompt for the solved state is good and can remain.
         user_prompt_content = f"""
         **Din Berättelse (Kontext):**
         ---
@@ -46,21 +71,30 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         **Uppgift:** Studentens svar hjälpte dig att lösa problemet. Svara som Ulla och bekräfta glatt att problemet är borta.
         """
     else:
-        # This is the main prompt that needs fixing.
-        # We REMOVE the final "Din Uppgift" instruction.
         technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
         student_name = get_name_from_email(student_email)
+
+        # Truncate the conversation history to the specified number of turns.
+        capped_history_string = cap_history(full_history_string_for_ulla, max_turns=4)
+
+        # The prompt structure with history placed before the instructions remains.
         user_prompt_content = f"""
-        **KÄLLFAKTA (Din enda sanning):**
-        {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
+        **Hittillsvarande Konversation:**
+        {capped_history_string}
+
+        **{student_name}s Senaste Meddelande till dig:**
+        {latest_student_message_for_ulla}
+
+        ---
+        **PÅMINNELSE OM DIN SITUATION (Följ detta noga):**
 
         **Din Berättelse (För din personlighet):**
         {problem_info_for_ulla['beskrivning']}
 
-        **Hittillsvarande Konversation:**
-        {full_history_string_for_ulla}
-        **{student_name}s Senaste Meddelande:**
-        {latest_student_message_for_ulla}
+        **KÄLLFAKTA (Simons lapp, din enda sanning):**
+        {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
+
+        **Din Uppgift Nu:** Svara på det senaste meddelandet från {student_name} som karaktären Ulla. Kom ihåg dina "Naturliga Reaktioner" från dina grundinstruktioner. Föreslå ALDRIG en lösning själv.
         """
 
     messages_for_ulla = [
@@ -72,7 +106,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         response = chat_with_model(
             model=PERSONA_MODEL,
             messages=messages_for_ulla,
-            options={'temperature': 0.7, 'num_predict': 1000}
+            options={'temperature': 0.7, 'num_predict': 1000, 'repeat_penalty': 1.1}
         )
         if not response:
             return "Åh nej, nu tappade jag visst bort mig lite..."
