@@ -115,7 +115,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
         ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
         ulla_svar = strip_markdown(ulla_svar)
-        logging.info(f"Ulla Persona AI ({student_email}): Genererade svar: '{ulla_svar[:50]}...'")
+        logging.info(f"Ulla Persona AI ({student_email}): Genererade svar: '{ulla_svar[:150]}...'")
         return ulla_svar
     except Exception as e:
         logging.error(f"Ulla Persona AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
