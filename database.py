@@ -427,13 +427,13 @@ def print_debug_db_content(email_filter=None, problem_filter=None):
     try:
         with get_db_connection(DEBUG_DB_FILE) as conn_ddb:
             conn_ddb.row_factory = sqlite3.Row; c_ddb = conn_ddb.cursor()
-            query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
+            query = "SELECT * FROM debug_conversations ORDER BY last_updated ASC"
             params = []
             if email_filter:
-                query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated DESC"
+                query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated ASC"
                 params.append(email_filter)
             elif problem_filter:
-                query = "SELECT * FROM debug_conversations WHERE problem_id = ? ORDER BY last_updated DESC"
+                query = "SELECT * FROM debug_conversations WHERE problem_id = ? ORDER BY last_updated ASC"
                 params.append(problem_filter)
             c_ddb.execute(query, params)
             rows_ddb = c_ddb.fetchall()
