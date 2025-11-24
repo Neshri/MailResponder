@@ -3,11 +3,17 @@ import logging
 import sqlite3
 import json
 import re
+import sys
+
+# --- Corrected Imports ---
+# We import the module 'graph_api' to access the global ACCESS_TOKEN variable dynamically
+import graph_api 
 from config import PERSONA_MODEL, EVAL_MODEL, DB_FILE, COMPLETED_DB_FILE, DEBUG_DB_FILE, TARGET_USER_GRAPH_ID
 from database import init_db, init_completed_db, init_debug_db, print_db_content, print_debug_db_content, get_db_connection, find_problem_by_id
 from llm_client import init_llm_client
 from email_processor import graph_check_emails
-from graph_api import get_graph_token, graph_delete_all_emails_in_inbox, ACCESS_TOKEN, jwt_is_expired
+# Removed ACCESS_TOKEN from this import list to avoid creating a stale local copy
+from graph_api import get_graph_token, graph_delete_all_emails_in_inbox, jwt_is_expired
 from prompts import NUM_LEVELS, PROBLEM_CATALOGUES
 
 # --- Main Execution Block ---
@@ -20,7 +26,7 @@ if __name__ == "__main__":
     except Exception as db_err:
         logging.critical(f"DB-initiering misslyckades: {db_err}. Avslutar."); exit(1)
 
-    import sys
+    # --- CLI Argument Handling ---
     if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
         # Helper function to find level index from problem ID
         def find_level_idx_by_id(problem_id):
@@ -137,6 +143,7 @@ if __name__ == "__main__":
         logging.critical("Failed to initialize Ollama connection")
         exit("FEL: Ollama-anslutning.")
 
+    # Initial token fetch
     if not get_graph_token():
         logging.critical("Misslyckades hämta Graph API-token.")
         exit(1)
@@ -144,17 +151,23 @@ if __name__ == "__main__":
     logging.info("Startar huvudloop för e-postkontroll...")
     while True:
         try:
-            if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):
+            # Check the variable inside the module (graph_api.ACCESS_TOKEN)
+            # This ensures we see the live value updated by get_graph_token()
+            if graph_api.ACCESS_TOKEN is None or jwt_is_expired(graph_api.ACCESS_TOKEN):
                 logging.info("Token saknas/utgånget före e-postkontroll, förnyar...")
                 if not get_graph_token():
                     logging.error("Misslyckades förnya token, väntar till nästa cykel.")
                     time.sleep(60)
                     continue
+            
             graph_check_emails()
+
         except Exception as loop_err:
             logging.error(f"Kritiskt fel i huvudloop: {loop_err}", exc_info=True)
+            # If 401 occurs, reset the variable in the MODULE, not locally
             if "401" in str(loop_err) or "token" in str(loop_err).lower():
-                ACCESS_TOKEN = None
+                graph_api.ACCESS_TOKEN = None
+        
         sleep_interval = 30
         logging.info(f"Sover i {sleep_interval} sekunder...")
         time.sleep(sleep_interval)

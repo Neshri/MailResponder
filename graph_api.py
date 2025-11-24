@@ -14,16 +14,33 @@ MSAL_APP = None
 ACCESS_TOKEN = None
 
 # --- Graph API Helper Functions ---
+    
 def get_graph_token():
     global MSAL_APP, ACCESS_TOKEN
-    if MSAL_APP is None: MSAL_APP = msal.ConfidentialClientApplication(AZURE_CLIENT_ID, authority=MSAL_AUTHORITY, client_credential=AZURE_CLIENT_SECRET)
-    token_result = MSAL_APP.acquire_token_silent(GRAPH_SCOPES, account=None)
-    if not token_result: logging.info("Hämtar nytt Graph API-token."); token_result = MSAL_APP.acquire_token_for_client(scopes=GRAPH_SCOPES)
-    if "access_token" in token_result: ACCESS_TOKEN = token_result['access_token']; return ACCESS_TOKEN
-    logging.error(f"Misslyckades hämta Graph token: {token_result.get('error_description')}"); ACCESS_TOKEN = None; return None
+    if MSAL_APP is None: 
+        MSAL_APP = msal.ConfidentialClientApplication(
+            AZURE_CLIENT_ID, 
+            authority=MSAL_AUTHORITY, 
+            client_credential=AZURE_CLIENT_SECRET
+        )
+    
+    # MSAL automatically checks the cache first when you call this.
+    # No need for manual silent check.
+    token_result = MSAL_APP.acquire_token_for_client(scopes=GRAPH_SCOPES)
+
+    if "access_token" in token_result: 
+        ACCESS_TOKEN = token_result['access_token']
+        # Remove the logging here to reduce noise, or change to DEBUG
+        logging.debug("Graph token retrieved (cache or new).") 
+        return ACCESS_TOKEN
+    
+    logging.error(f"Misslyckades hämta Graph token: {token_result.get('error_description')}")
+    ACCESS_TOKEN = None
+    return None
+
 
 def jwt_is_expired(token_str):
-    if not token_str: return True;
+    if not token_str: return True
     try: payload_str = token_str.split('.')[1]; payload_str += '=' * (-len(payload_str) % 4); payload = json.loads(base64.urlsafe_b64decode(payload_str).decode()); return payload.get('exp', 0) < time.time()
     except Exception: return True
 
