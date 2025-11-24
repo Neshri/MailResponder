@@ -104,108 +104,13 @@ if __name__ == "__main__":
         email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
         print_db_content(email_filter=email_to_filter)
         exit()
+
     elif len(sys.argv) > 1 and sys.argv[1].lower() == "--printdebugdb":
-        def print_debug_db_content(email_filter=None, problem_filter=None):
-            if email_filter or problem_filter:
-                print(f"--- DEBUG DB UTSKRIFT (Filtrerat på: email={email_filter}, problem={problem_filter}) ---")
-            else:
-                print("--- DEBUG DB UTSKRIFT (All data) ---")
-
-            # --- Print Debug Conversations ---
-            print("\n--- UTSKRIFT DEBUG CONVERSATIONS ---")
-            try:
-                with get_db_connection(DEBUG_DB_FILE) as conn_ddb:
-                    conn_ddb.row_factory = sqlite3.Row; c_ddb = conn_ddb.cursor()
-                    query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
-                    params = []
-                    if email_filter:
-                        query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated DESC"
-                        params.append(email_filter)
-                    elif problem_filter:
-                        query = "SELECT * FROM debug_conversations WHERE problem_id = ? ORDER BY last_updated DESC"
-                        params.append(problem_filter)
-                    c_ddb.execute(query, params)
-                    rows_ddb = c_ddb.fetchall()
-                    if not rows_ddb: print("Tabellen debug_conversations är tom (eller inget matchar filter).")
-                    else:
-                        for r_ddb in rows_ddb:
-                            d = dict(r_ddb)
-                            level_idx = d.get('problem_level_index', -1)
-                            level_display = level_idx + 1 if level_idx != -1 else "N/A"
-                            print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx})")
-                            print(f"  Last Updated: {d.get('last_updated')}")
-
-                            # --- CORRECTED LOGIC (v4) ---
-                            # Get the raw data
-                            conversation_history = d.get('full_conversation_history', '')
-                            evaluator_responses_json = d.get('evaluator_responses', '[]')
-                            evaluator_responses = json.loads(evaluator_responses_json)
-
-                            # Print raw data for debugging
-                            print("\n  --- RAW DATA ---")
-                            print(f"  Raw Evaluator Responses JSON ({len(evaluator_responses)} entries):")
-                            # Use json.dumps for pretty printing the raw JSON
-                            print(json.dumps(evaluator_responses, indent=2, ensure_ascii=False))
-                            print("  ----------------\n")
-
-                            print("  Conversation History (Chronological):")
-                            print("=" * 60)
-
-                            # 1. Parse all messages from the history string.
-                            history_lines = [line.strip() for line in conversation_history.split('\n\n') if line.strip()]
-
-                            # 2. Build the final timeline by iterating through history and inserting evaluations sequentially.
-                            final_timeline = []
-                            evaluator_index = 0
-
-                            for line in history_lines:
-                                # Differentiate between Ulla, Student, and final Student Completion messages
-                                if line.startswith("Ulla:"):
-                                    if not final_timeline: # The very first message is the initial prompt
-                                        final_timeline.append({'type': 'INITIAL', 'content': line})
-                                    else:
-                                        final_timeline.append({'type': 'ULLA', 'content': line})
-
-                                elif line.lower().startswith("jättebra!"):
-                                    final_timeline.append({'type': 'STUDENT_COMPLETION', 'content': line})
-
-                                else: # This is a standard student message that requires an evaluation
-                                    final_timeline.append({'type': 'STUDENT', 'content': line})
-
-                                    # Immediately add the next available evaluator response in sequence
-                                    if evaluator_index < len(evaluator_responses):
-                                        final_timeline.append({'type': 'EVAL', 'data': evaluator_responses[evaluator_index]})
-                                        evaluator_index += 1
-
-                            # 3. Print the correctly assembled timeline.
-                            for event in final_timeline:
-                                if event['type'] == 'INITIAL':
-                                    print(f"  [INITIAL] {event['content']}")
-                                elif event['type'] == 'STUDENT':
-                                    print(f"  [STUDENT] {event['content']}")
-                                elif event['type'] == 'STUDENT_COMPLETION':
-                                    print(f"  [STUDENT] {event['content']}")
-                                elif event['type'] == 'EVAL':
-                                    print(f"  [EVALUATOR] {event['data']['timestamp']}:")
-                                    # Clean up response text from markdown and other artifacts
-                                    response_text = event['data']['response'].replace('</end_of_turn>', '').strip()
-                                    response_text = re.sub(r'^```\s*|\s*```$', '', response_text)
-                                    for line in response_text.split('\n'):
-                                        if line.strip():
-                                            print(f"    {line}")
-                                elif event['type'] == 'ULLA':
-                                    print(f"  [ULLA] {event['content']}")
-                                print() # Add a blank line for readability
-
-                            print("-" * 80)
-            except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
-
-            print("\n--- SLUT DEBUG DB UTSKRIFT ---")
-
         email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
         problem_filter = sys.argv[3] if len(sys.argv) > 3 else None
         print_debug_db_content(email_filter=email_to_filter, problem_filter=problem_filter)
         exit()
+
     elif len(sys.argv) > 1 and sys.argv[1].lower() == "--emptyinbox":
         logging.info("--- EMPTYING INBOX (via --emptyinbox command) ---")
         if not TARGET_USER_GRAPH_ID:
