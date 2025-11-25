@@ -88,16 +88,36 @@ def get_name_from_email(email):
         return "Support" # Fallback to the old label if anything goes wrong
 
 def _parse_graph_email_item(msg_graph_item):
-    email_data = {"graph_msg_id": msg_graph_item.get('id'), "subject": msg_graph_item.get('subject', ""), "sender_email": "", "internet_message_id": msg_graph_item.get('internetMessageId'), "graph_conversation_id_incoming": msg_graph_item.get('conversationId'), "references_header_value": None, "cleaned_body": "", "body_preview": msg_graph_item.get('bodyPreview', "")}
+    email_data = {
+        "graph_msg_id": msg_graph_item.get('id'),
+        "subject": msg_graph_item.get('subject', ""),
+        "sender_email": "",
+        "internet_message_id": msg_graph_item.get('internetMessageId'),
+        "graph_conversation_id_incoming": msg_graph_item.get('conversationId'),
+        "references_header_value": None,
+        "cleaned_body": "",
+        "body_preview": msg_graph_item.get('bodyPreview', ""),
+        # ADD THIS LINE:
+        "received_datetime": msg_graph_item.get('receivedDateTime', "") 
+    }
+    
     sender_info = msg_graph_item.get('from') or msg_graph_item.get('sender')
-    if sender_info and sender_info.get('emailAddress'): email_data["sender_email"] = sender_info['emailAddress'].get('address', '').lower()
+    if sender_info and sender_info.get('emailAddress'): 
+        email_data["sender_email"] = sender_info['emailAddress'].get('address', '').lower()
+        
     for header in msg_graph_item.get('internetMessageHeaders', []):
-        if header.get('name', '').lower() == 'references': email_data["references_header_value"] = header.get('value'); break
-    body_obj = msg_graph_item.get('body', {}); body_content = body_obj.get('content', '')
+        if header.get('name', '').lower() == 'references': 
+            email_data["references_header_value"] = header.get('value')
+            break
+            
+    body_obj = msg_graph_item.get('body', {})
+    body_content = body_obj.get('content', '')
+    
     if body_obj.get('contentType','').lower()=='html' and BeautifulSoup:
         raw_body = BeautifulSoup(body_content, "html.parser").get_text(separator='\n').strip()
     else:
         raw_body = body_content
+        
     email_data["cleaned_body"] = clean_email_body(raw_body, TARGET_USER_GRAPH_ID)
 
     # Detect images
@@ -113,7 +133,7 @@ def _parse_graph_email_item(msg_graph_item):
             has_images = True
     email_data["has_images"] = has_images
 
-    logging.debug(f"Parsed email: ID={email_data['graph_msg_id']}, From={email_data['sender_email']}, HasImages={has_images}, CleanedBody='{email_data['cleaned_body'][:50]}...'")
+    logging.debug(f"Parsed email: ID={email_data['graph_msg_id']}, From={email_data['sender_email']}, Time={email_data['received_datetime']}")
     return email_data
 
 def extract_student_message_from_reply(full_body, active_hist_str):
