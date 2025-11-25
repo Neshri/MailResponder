@@ -14,7 +14,7 @@ from llm_client import init_llm_client
 from email_processor import graph_check_emails
 # Removed ACCESS_TOKEN from this import list to avoid creating a stale local copy
 from graph_api import get_graph_token, graph_delete_all_emails_in_inbox, jwt_is_expired
-from prompts import NUM_LEVELS, PROBLEM_CATALOGUES
+from problem_catalog import NUM_LEVELS, PROBLEM_CATALOGUES
 
 # --- Main Execution Block ---
 if __name__ == "__main__":

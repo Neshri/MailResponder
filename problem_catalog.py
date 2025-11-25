@@ -119,7 +119,7 @@ PROBLEM_CATALOGUES = [
                 "symptom": "PDF-filen visas som en helt vit sida",
                 "felmeddelande": "'Ett fel uppstod vid bearbetning av sidan. Ogiltig färgrymd.'"
             },
-            "losning_nyckelord": ["PDF-fil ('Telia_Faktura_Mars.pdf') öppnas i Adobe Reader X (10.1.0) och visas som en helt vit sida, ibland med felmeddelande 'Ogiltig färgrymd'", "PDF-läsaren är för gammal eller har problem att rendera filen", "uppdatera Adobe Reader till senaste versionen", "prova att öppna PDF-filen med en annan PDF-visare (t.ex. webbläsare)"],
+            "losning_nyckelord": ["PDF-fil ('Telia_Faktura_Mars.pdf') öppnas i Adobe Reader X (10.1.0) och visas som en helt vit sida, ibland med felmeddelande 'Ogiltig färgrymd'", "PDF-läsaren är för gammal eller har problem att rendera filen", "uppdatera Adobe Reader till senaste versionen", "prova att öppna PDF-filen med en annan PDF-visare (t.ex. webbläsare)", "installera en modern webbläsare (Chrome, Firefox, Edge)", "byt till en annan webbläsare", "uppdatera webbläsaren"],
             "start_prompt": "Min el-räkning har kommit, men när jag öppnar den så är hela sidan alldeles kritvit! Jag ser inte ett enda öre av vad jag ska betala. Måns tycker det är jättekonstigt."
         },
         {
@@ -133,7 +133,7 @@ PROBLEM_CATALOGUES = [
                 "adress": "http://www.swedbank.se",
                 "symptom": "Hänglåset i adressfältet är överstruket"
             },
-            "losning_nyckelord": ["Webbläsare (Firefox ESR 52) visar röd varningssida 'Anslutningen är inte säker' (felkod 'SEC_ERROR_UNKNOWN_ISSUER') vid försök att nå bankens (Swedbank) webbplats via 'http://www.swedbank.se' (överstruket hänglås)", "webbplatsen försöker nås via en osäker anslutning (HTTP istället för HTTPS)", "skriv https:// före webbadressen (t.ex. https://www.swedbank.se)", "klicka på lås-ikonen (om det finns en varning) och välj att fortsätta till säker anslutning", "se till att använda https"],
+            "losning_nyckelord": ["Webbläsare (Firefox ESR 52) visar röd varningssida 'Anslutningen är inte säker' (felkod 'SEC_ERROR_UNKNOWN_ISSUER') vid försök att nå bankens (Swedbank) webbplats via 'http://www.swedbank.se' (överstruket hänglås)", "webbplatsen försöker nås via en osäker anslutning (HTTP istället för HTTPS)", "skriv https:// före webbadressen (t.ex. https://www.swedbank.se)", "klicka på lås-ikonen (om det finns en varning) och välj att fortsätta till säker anslutning", "se till att använda https", "uppdatera Firefox till senaste versionen", "installera en nyare webbläsare"],
             "start_prompt": "När jag ska logga in på min bank så säger datorn att anslutningen inte är säker och stänger ner hela rasket! Jag blir så nervös av sånt här."
         }
     ],
@@ -243,7 +243,7 @@ PROBLEM_CATALOGUES = [
                 "bildskärm": "Dell S2421H (ansluten med HDMI)",
                 "ljudenhet": "'Högtalare (Realtek High Definition Audio)' är standard, 'Hörlurar' listas men är inte standard"
             },
-            "losning_nyckelord": ["Ljud från 'Foobar2000' spelas via datorns monitorhögtalare ('Dell S2421H' via HDMI) trots att hörlurar ('Philips SHP2000') är anslutna till grönt 3.5mm ljuduttag; Windows Ljudinställningar visar 'Högtalare (Realtek High Definition Audio)' som standardenhet, 'Hörlurar' listas men är inaktiverad/inte standard", "hörlurarna är inte valda som standardljudenhet i Windows", "ändra standarduppspelningsenhet till hörlurarna i ljudinställningarna", "högerklicka på hörlurarna i ljudpanelen och välj 'Ange som standardenhet'"],
+            "losning_nyckelord": ["Ljud från 'Foobar2000' spelas via datorns monitorhögtalare ('Dell S2421H' via HDMI) trots att hörlurar ('Philips SHP2000') är anslutna till grönt 3.5mm ljuduttag; Windows Ljudinställningar visar 'Högtalare (Realtek High Definition Audio)' som standardenhet, 'Hörlurar' listas men är inte standard", "hörlurarna är inte valda som standardljudenhet i Windows", "ändra standarduppspelningsenhet till hörlurarna i ljudinställningarna", "högerklicka på hörlurarna i ljudpanelen och välj 'Ange som standardenhet'"],
             "start_prompt": "Jag sätter i mina fina hörlurar för att inte störa Måns när han sover, men ljudet fortsätter ändå att komma ur de stora högtalarna! Det är ju inte klokt."
         },
         {
@@ -282,27 +282,6 @@ PROBLEM_CATALOGUES = [
                 "filtyp": ".MKV (H.264, 1080p)",
                 "program": "VLC Media Player 3.0.8",
                 "grafikkort": "NVIDIA GeForce GT 710 2GB",
-                "drivrutin": "Version 391.35 (från 2018)"
-            },
-            "losning_nyckelord": ["Uppspelning av '.MKV'-fil (H.264, 1080p) i VLC Media Player 3.0.8 ger gröna/rosa fyrkantiga artefakter och pixelfel; ljud normalt; Grafikkort NVIDIA GeForce GT 710 2GB, drivrutin 391.35 (2018)", "grafikkortets drivrutiner är föråldrade eller korrupta", "uppdatera grafikkortets drivrutiner till senaste stabila versionen från NVIDIA:s webbplats", "avinstallera gamla drivrutiner och installera nya rena drivrutiner"],
-            "start_prompt": "När jag försöker titta på en film jag fått från barnbarnen så fylls hela skärmen av konstigt flimmer i alla möjliga färger, och bilden säger att den har hängt sig. Det ser ut som Måns har lekt med färgburkarna!"
-        },
-        {
-            "id": "L3_P003",
-            "beskrivning": "Jag satte i nya bläckpatroner i min skrivare, men när jag skriver ut kommer pappren ut alldeles blanka! Jag tittade på en av de nya patronerna i förpackningen och såg att det satt en liten orange skyddstejp med texten 'PULL' över ett lufthål. Jag minns inte att jag drog bort någon sån...",
-            "tekniska_fakta": {
-                "skrivare": "Epson Stylus DX4400",
-                "patroner": "Svart (T0711) och färg (T0712, T0713, T0714)",
-                "symptom": "Utskrifter är helt blanka",
-                "observation": "Oanvänd patron har en orange skyddstejp märkt 'PULL' över ett lufthål"
-            },
-            "losning_nyckelord": ["Nya bläckpatroner ('Epson T0711' svart, 'T0712/3/4' färg) installerade i 'Epson Stylus DX4400' matar fram blanka papper; orange skyddstejp ('PULL') observerad på ovansidan av ny patron täckande lufthål", "skyddstejp på bläckpatronerna blockerar bläcktillförseln eller ventilationen", "avlägsna all skyddstejp och plastremsor från nya bläckpatroner innan installation", "se till att lufthålen på patronerna är helt öppna"],
-            "start_prompt": "Jag har satt i nya fina färgpatroner i skrivaren, men pappren kommer ut alldeles tomma, inte en prick! Det är som att färgen har rymt."
-        },
-        {
-            "id": "L3_P004",
-            "beskrivning": "Min bärbara dator fungerar bara så länge laddaren är i. Om jag drar ur sladden stängs den av direkt. Batteriikonen visar 0% och säger att den inte laddar, och laddningslampan på datorn lyser inte. Det är som att den vägrar äta sin ström!",
-            "tekniska_fakta": {
                 "dator": "HP Pavilion G6-2250so",
                 "batteri": "HP HSTNN-LB0W",
                 "laddare": "HP 65W Smart AC Adapter (modell PPP009L-E)",
@@ -397,7 +376,7 @@ PROBLEM_CATALOGUES = [
                 "bild": "Ingen bild på skärmen",
                 "lampa": "Strömlampan lyser grönt"
             },
-            "losning_nyckelord": ["Stationär dator ('HP Compaq Elite 8300 SFF') ger tre korta ljudsignaler (beep code) vid startförsök; skärmen förblir svart; strömlampa lyser grönt; RAM 2x 'Kingston KVR1333D3N9/2G'", "fel på RAM-minnet eller dålig kontakt med minnesmodulerna", "ta ut och sätt tillbaka minneskorten ordentligt (reseat)", "prova med en minnesmodul i taget i olika minnesplatser för att isolera felet"],
+            "losning_nyckelord": ["Stationär dator ('HP Compaq Elite 8300 SFF') ger tre korta ljudsignaler (beep code) vid startförsök; skärmen förblir svart; strömlampa lyser grönt; RAM 2x 'Kingston KVR1333D3N9/2G'", "fel på RAM-minnet eller dålig kontakt med minnesmodulerna", "ta ut och sätt tillbaka minneskorten ordentligt (reseat)", "prova med en minnesmodul i taget i olika minnesplatser för att identifiera felaktig modul eller plats"],
             "start_prompt": "När jag trycker på startknappen på min stora datorlåda piper den bara tre gånger, kort och ilsket, och fönsterskärmen är helt svart. Den verkar ha fått hicka!"
         },
         {
@@ -545,7 +524,7 @@ PROBLEM_CATALOGUES = [
                 "felmeddelande": "'NTLDR is missing. Press Ctrl+Alt+Del to restart.'",
                 "bootorder": "1. CD-ROM, 2. Hard Disk"
             },
-            "losning_nyckelord": ["Äldre dator (Windows XP Pro, Phoenix AwardBIOS v6.00PG) visar svart skärm med text: 'NTLDR is missing. Press Ctrl+Alt+Del to restart.'; CD-ROM är första startenhet i BIOS, HDD ('Maxtor DiamondMax Plus 9 80GB ATA/133') andra; start från XP installations-CD misslyckas (CD läses ej)", "felaktig startenhetsordning (boot order) i BIOS eller problem med startfilerna på hårddisken", "gå in i BIOS-inställningarna och ställ in hårddisken (HDD) som första startenhet", "kontrollera att hårddisken detekteras korrekt i BIOS och försök reparera startsektorn med XP-CD (om CD-läsaren fungerar)", "kontrollera IDE/SATA-kabeln till hårddisken"],
+            "losning_nyckelord": ["Äldre dator (Windows XP Pro, Phoenix AwardBIOS v6.00PG) visar svart skärm med text: 'NTLDR is missing. Press Ctrl+Alt+Del to restart'; CD-ROM är första startenhet i BIOS, HDD ('Maxtor DiamondMax Plus 9 80GB ATA/133') andra; start från XP installations-CD misslyckas (CD läses ej)", "felaktig startenhetsordning (boot order) i BIOS eller problem med startfilerna på hårddisken", "gå in i BIOS-inställningarna och ställ in hårddisken (HDD) som första startenhet", "kontrollera att hårddisken detekteras korrekt i BIOS och försök reparera startsektorn med XP-CD (om CD-läsaren fungerar)", "kontrollera IDE/SATA-kabeln till hårddisken"],
             "start_prompt": "Min gamla trotjänare till dator säger bara 'NTLDR saknas' och vägrar gå vidare från en svart skärm. Det låter som en viktig del har sprungit bort. Kanske Måns har gömt den?"
         },
         {
