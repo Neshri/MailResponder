@@ -1,21 +1,32 @@
 # Ulla - AI Support Training Bot
 
-Ulla is an automated, AI-driven training bot designed to simulate realistic IT support conversations. It operates entirely over email, where it plays the role of "Ulla," a friendly but non-technical elderly user experiencing various computer problems.
+Ulla is an automated, AI-driven training bot designed to simulate realistic IT support conversations. It operates entirely over email, where it plays the role of "Ulla," a friendly but non-technical elderly Swedish woman experiencing various computer problems.
 
-The system is built to help IT support students practice their diagnostic, communication, and problem-solving skills in a controlled environment. Student progress is tracked, and problems are organized into escalating difficulty levels.
+The system is built to help IT support students practice their diagnostic, communication, and problem-solving skills in a controlled environment. Students progress through 5 difficulty levels (L1-L5) with automatic unlocks based on successful problem solving.
 
 ## Features
 
 -   **Email-Based Interaction:** Communicates using the Microsoft Graph API to send and receive real emails.
--   **Multi-Level Problem Catalogue:** Problems are defined in `prompts.py` and structured into multiple difficulty levels, unlocked as the student succeeds.
--   **Persistent Student Tracking:** A SQLite database (`conversations.db`) tracks each student's progress, current level, and active conversation.
--   **Conversation Archiving:** Saves the full history of every completed conversation to a separate archive database (`completed_conversations.db`) for later review and analysis.
--   **Debug Database:** Maintains a separate debug database (`debug_conversations.db`) containing full conversation histories with complete evaluator AI responses for debugging and analysis, ensuring no debug information appears in user-facing conversations.
+-   **Progressive Learning System:** 5 difficulty levels (L1-L5) with automatic progression based on successful problem solving.
+-   **Swedish Localization:** Ulla persona responds in Swedish with accessibility-focused communication patterns.
+-   **Multi-Database Architecture:**
+    - **Progress Tracking:** SQLite database (`conversations.db`) tracks student progress and active conversations
+    - **Conversation Archiving:** Completed conversations saved to separate archive database
+    - **Debug Database:** Full AI conversation histories with evaluator responses for analysis
+-   **Advanced Email Processing:**
+    - Intelligent reply detection and conversation threading
+    - Email content cleaning and HTML parsing
+    - Race condition prevention with parallel processing
 -   **Dual-LLM Architecture:**
-    -   **Evaluator AI:** A strict, logical model that determines if a student's suggestion correctly solves the problem.
-    -   **Persona AI:** A creative model that plays the role of Ulla, responding conversationally based on the Evaluator's verdict.
--   **Highly Configurable:** Personas, problems, and difficulty levels can be easily modified or extended by editing the `prompts.py` file.
--   **Utility Functions:** Includes command-line flags for database inspection and inbox cleanup.
+    -   **Evaluator AI:** Strict logical model that determines if solutions correctly solve problems
+    -   **Persona AI:** Creative model simulating Ulla's conversational responses
+-   **Multi-User Support:** Handles multiple students simultaneously with conversation persistence.
+-   **Race Condition Prevention:** Advanced concurrency management for reliable email processing.
+-   **Conversation Management:** Intelligent reply detection and conversation state management.
+-   **Analysis Tools:** Comprehensive debugging and conversation analysis capabilities.
+-   **Highly Configurable:** Problems, personas, and difficulty levels easily customizable in `prompts.py`.
+-   **Utility Commands:** CLI flags for database inspection, debugging, and inbox management.
+-   **Test Suite:** Built-in testing utilities for system validation and troubleshooting.
 
 ## How It Works
 
@@ -196,19 +207,55 @@ python MailResponder.py &
 
 ```
 .
-├── MailResponder.py          # Main application script, contains all core logic.
-├── prompts.py                # Contains all LLM system prompts and the problem catalogues.
-├── conversations.db          # SQLite database for tracking student progress and active problems.
-├── completed_conversations.db  # Archive database for all solved conversations.
-├── debug_conversations.db    # Debug database containing full conversations with evaluator AI responses.
-├── .env                      # Holds all secrets and configuration variables (MUST be ignored by git).
-└── requirements.txt          # List of Python dependencies.
+├── MailResponder.py          # Main application entry point and CLI interface
+├── config.py                 # Configuration management for environment variables
+├── database.py               # SQLite database operations and schema management
+├── email_parser.py           # Advanced email parsing and reply detection
+├── email_processor.py        # Main orchestration logic and email processing
+├── response_generator.py     # AI-powered response generation with persona simulation
+├── evaluator.py              # Problem evaluation and solution verification
+├── conversation_manager.py   # Conversation flow and state management
+├── graph_api.py              # Microsoft Graph API integration for email
+├── llm_client.py             # LLM API client for Ollama integration
+├── problem_catalog.py        # Problem catalogue management and validation
+├── prompts.py                # LLM system prompts and problem definitions
+├── test.py                   # Testing utilities and validation
+├── conversations.db          # SQLite database for tracking student progress
+├── completed_conversations.db  # Archive database for completed conversations
+├── debug_conversations.db    # Debug database with full AI responses
+├── example.env               # Environment configuration template
+├── .env                      # Holds all secrets and configuration (git-ignored)
+└── requirements.txt          # Python dependencies list
 ```
 
 ## Configuration and Extension
 
-The core of the simulation's content resides in `prompts.py`. To extend the training:
+The system is designed for easy customization across multiple configuration files:
+
+### `prompts.py`
+The core of the simulation's content resides in this file. To extend the training:
 
 -   **Add New Problems:** Add new problem dictionaries to the `PROBLEM_CATALOGUES` list. Follow the existing structure.
 -   **Add New Levels:** Add a new `START_PHRASES` entry and a corresponding list of problems in `PROBLEM_CATALOGUES`.
 -   **Change Persona:** Modify the `ULLA_PERSONA_PROMPT` or `EVALUATOR_SYSTEM_PROMPT` to alter the behavior of the AIs.
+
+### `config.py`
+Centralized configuration management:
+
+-   **Database Settings:** Configure database paths and schemas
+-   **API Integration:** Manage Microsoft Graph API and LLM API endpoints
+-   **Environment Variables:** Load and validate configuration from `.env` file
+
+### `problem_catalog.py`
+Problem validation and management:
+
+-   **Validate Problem Structure:** Ensure problems meet required format
+-   **Manage Difficulty Levels:** Define level progression and unlocking criteria
+-   **Problem Templates:** Standardize problem creation patterns
+
+### Database Schema Customization
+Modify database operations in `database.py` to:
+
+-   Add new tracking metrics for student progress
+-   Extend conversation history with additional metadata
+-   Implement custom analysis queries for instructor insights
