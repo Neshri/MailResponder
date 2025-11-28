@@ -9,7 +9,7 @@ import sys
 # We import the module 'graph_api' to access the global ACCESS_TOKEN variable dynamically
 import graph_api 
 from config import PERSONA_MODEL, EVAL_MODEL, DB_FILE, COMPLETED_DB_FILE, DEBUG_DB_FILE, TARGET_USER_GRAPH_ID
-from database import init_db, init_completed_db, init_debug_db, print_db_content, print_debug_db_content, get_db_connection, find_problem_by_id
+from database import init_db, init_completed_db, init_debug_db, print_debug_db_content, get_db_connection, find_problem_by_id
 from llm_client import init_llm_client
 from email_processor import graph_check_emails
 # Removed ACCESS_TOKEN from this import list to avoid creating a stale local copy
@@ -28,85 +28,9 @@ if __name__ == "__main__":
 
     # --- CLI Argument Handling ---
     if len(sys.argv) > 1 and sys.argv[1].lower() == "--printdb":
-        # Helper function to find level index from problem ID
-        def find_level_idx_by_id(problem_id):
-            for level_idx, level_catalogue in enumerate(PROBLEM_CATALOGUES):
-                for problem in level_catalogue:
-                    if problem['id'] == problem_id:
-                        return level_idx
-            return -1
-
-        def print_db_content(email_filter=None):
-            if email_filter:
-                print(f"--- DB UTSKRIFT (Filtrerat på: {email_filter}) ---")
-            else:
-                print("--- DB UTSKRIFT (All data) ---")
-
-            # --- 1. Print Student Progress ---
-            print("\n--- UTSKRIFT STUDENT PROGRESS ---")
-            try:
-                with get_db_connection(DB_FILE) as conn_pdb:
-                    conn_pdb.row_factory = sqlite3.Row; c_pdb = conn_pdb.cursor()
-                    query = "SELECT * FROM student_progress ORDER BY student_email"
-                    params = []
-                    if email_filter:
-                        query = "SELECT * FROM student_progress WHERE student_email = ?"
-                        params.append(email_filter)
-                    c_pdb.execute(query, params)
-                    rows_pdb = c_pdb.fetchall()
-                    if not rows_pdb: print("Tabellen student_progress är tom (eller inget matchar filter).")
-                    else:
-                        for r_pdb in rows_pdb: print(dict(r_pdb))
-            except Exception as e_pdb: print(f"Fel vid utskrift av student_progress: {e_pdb}")
-
-            # --- 2. Print Active Problems ---
-            print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
-            try:
-                with get_db_connection(DB_FILE) as conn_apdb:
-                    conn_apdb.row_factory = sqlite3.Row; c_apdb = conn_apdb.cursor()
-                    query = "SELECT * FROM active_problems ORDER BY student_email"
-                    params = []
-                    if email_filter:
-                        query = "SELECT * FROM active_problems WHERE student_email = ?"
-                        params.append(email_filter)
-                    c_apdb.execute(query, params)
-                    rows_apdb = c_apdb.fetchall()
-                    if not rows_apdb: print("Tabellen active_problems är tom (eller inget matchar filter).")
-                    else:
-                        for r_apdb in rows_apdb:
-                            d = dict(r_apdb)
-                            problem_id = d.get('problem_id')
-                            # Find the level index from the in-memory catalogue
-                            level_idx = find_level_idx_by_id(problem_id)
-                            level_display = level_idx + 1 if level_idx != -1 else "N/A"
-                            print(f"Student: {d.get('student_email')}, Problem ID: {problem_id}, Level: {level_display} (Index: {level_idx})")
-                            print(f"  History:\n{d.get('conversation_history', '')}")
-            except Exception as e_apdb: print(f"Fel vid utskrift av active_problems: {e_apdb}")
-
-            # --- 3. Print Completed Conversations ---
-            print("\n--- UTSKRIFT COMPLETED CONVERSATIONS ---")
-            try:
-                with get_db_connection(COMPLETED_DB_FILE) as conn_ccdb:
-                    conn_ccdb.row_factory = sqlite3.Row; c_ccdb = conn_ccdb.cursor()
-                    query = "SELECT * FROM completed_conversations ORDER BY completed_at DESC"
-                    params = []
-                    if email_filter:
-                        query = "SELECT * FROM completed_conversations WHERE student_email = ? ORDER BY completed_at DESC"
-                        params.append(email_filter)
-                    c_ccdb.execute(query, params)
-                    rows_ccdb = c_ccdb.fetchall()
-                    if not rows_ccdb: print("Tabellen completed_conversations är tom (eller inget matchar filter).")
-                    else:
-                        for r_ccdb in rows_ccdb:
-                            d = dict(r_ccdb)
-                            level_idx = d.get('problem_level_index', -1)
-                            level_display = level_idx + 1 if level_idx != -1 else "N/A"
-                            print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Level: {level_display} (Index: {level_idx}), Completed: {d.get('completed_at')}")
-                            print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
-            except Exception as e_ccdb: print(f"Fel vid utskrift av completed_conversations: {e_ccdb}")
-
-            print("\n--- SLUT DB UTSKRIFT ---")
-
+        # Import print_db_content for the printdb command
+        from database import print_db_content
+        
         email_to_filter = sys.argv[2] if len(sys.argv) > 2 else None
         print_db_content(email_filter=email_to_filter)
         exit()

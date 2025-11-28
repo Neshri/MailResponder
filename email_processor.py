@@ -16,8 +16,8 @@ from email_parser import (
 )
 from problem_catalog import START_PHRASES, NUM_LEVELS
 from conversation_manager import (
-    _handle_start_new_problem_main_thread, 
-    _llm_evaluation_and_reply_task, 
+    handle_start_new_problem_main_thread, 
+    llm_evaluation_and_reply_task, 
     process_completed_problem, 
     inform_level_error
 )
@@ -63,7 +63,7 @@ def graph_check_emails():
             
         elif task['type'] == 'start_command':
             # Execute Start Commands IMMEDIATELY to update DB state
-            if _handle_start_new_problem_main_thread(task['data'], task['level_idx']):
+            if handle_start_new_problem_main_thread(task['data'], task['level_idx']):
                 mark_email_as_read(task['data']["graph_msg_id"])
                 
         elif task['type'] == 'info_error':
@@ -245,7 +245,7 @@ def _execute_llm_tasks(tasks):
     with ThreadPoolExecutor(max_workers=1) as executor:
         future_to_task = {
             executor.submit(
-                _llm_evaluation_and_reply_task,
+                llm_evaluation_and_reply_task,
                 t['email_data']["sender_email"],
                 t['full_history'],
                 t['problem_info'],

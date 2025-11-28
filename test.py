@@ -21,7 +21,7 @@ from llm_client import *
 from email_processor import *
 from conversation_manager import *
 from problem_catalog import PROBLEM_CATALOGUES
-from conversation_manager import _handle_start_new_problem_main_thread
+from conversation_manager import handle_start_new_problem_main_thread
 from email_parser import _parse_graph_email_item
 
 class TestImports(unittest.TestCase):
@@ -318,7 +318,7 @@ class TestConversationManager(unittest.TestCase):
             'graph_conversation_id_incoming': 'conv_id'
         }
 
-        success = _handle_start_new_problem_main_thread(email_data, 0)
+        success = handle_start_new_problem_main_thread(email_data, 0)
         self.assertTrue(success)
         mock_send.assert_called_once()
 
@@ -334,7 +334,7 @@ class TestConversationManager(unittest.TestCase):
             'graph_conversation_id_incoming': 'conv_id'
         }
 
-        success = _handle_start_new_problem_main_thread(email_data, 0)
+        success = handle_start_new_problem_main_thread(email_data, 0)
         self.assertFalse(success)
         mock_clear.assert_not_called()
 

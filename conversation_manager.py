@@ -13,7 +13,7 @@ from evaluator import get_evaluator_decision
 from response_generator import get_ulla_persona_reply
 from email_parser import extract_student_message_from_reply
 
-def _handle_start_new_problem_main_thread(email_data, student_next_eligible_level_idx):
+def handle_start_new_problem_main_thread(email_data, student_next_eligible_level_idx):
     """
     Handle the logic for starting a new problem when a user sends a start command.
     """
@@ -38,7 +38,7 @@ def _handle_start_new_problem_main_thread(email_data, student_next_eligible_leve
         logging.error("Misslyckades sätta aktivt problem i DB för ny nivå.")
         return False
 
-def _llm_evaluation_and_reply_task(student_email, full_history_string, problem_info,
+def llm_evaluation_and_reply_task(student_email, full_history_string, problem_info,
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
                                    active_problem_convo_id_db,
                                    email_data_for_result, student_entry_for_db, problem_id=None):
