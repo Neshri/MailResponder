@@ -22,7 +22,7 @@ from email_processor import *
 from conversation_manager import *
 from problem_catalog import PROBLEM_CATALOGUES
 from conversation_manager import handle_start_new_problem_main_thread
-from email_parser import _parse_graph_email_item
+from email_parser import parse_graph_email_item
 
 class TestImports(unittest.TestCase):
     """Test basic imports work without errors"""
@@ -49,9 +49,9 @@ class TestImports(unittest.TestCase):
     def test_email_parser_import(self):
         """Test email_parser module imports correctly"""
         try:
-            from email_parser import clean_email_body, _parse_graph_email_item
+            from email_parser import clean_email_body, parse_graph_email_item
             self.assertTrue(callable(clean_email_body))
-            self.assertTrue(callable(_parse_graph_email_item))
+            self.assertTrue(callable(parse_graph_email_item))
         except ImportError as e:
             self.fail(f"Email parser import failed: {e}")
 
@@ -229,7 +229,7 @@ On Mon, Jan 1, 2024 at 12:00 PM, Student <student@example.com> wrote:
             'attachments': []
         }
 
-        parsed = _parse_graph_email_item(mock_msg)
+        parsed = parse_graph_email_item(mock_msg)
         self.assertEqual(parsed['graph_msg_id'], 'test_id')
         self.assertEqual(parsed['sender_email'], 'student@example.com')
         self.assertEqual(parsed['subject'], 'Test Subject')

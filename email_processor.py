@@ -10,7 +10,7 @@ from database import (
     get_current_active_problem, 
 )
 from email_parser import (
-    _parse_graph_email_item, 
+    parse_graph_email_item, 
     extract_student_message_from_reply, 
     get_name_from_email
 )
@@ -102,7 +102,7 @@ def _group_by_user(raw_messages):
     """Parses JSON and groups into a dict: { 'user@email.com': [email1, email2] }"""
     batches = defaultdict(list)
     for item in raw_messages:
-        email_data = _parse_graph_email_item(item)
+        email_data = parse_graph_email_item(item)
         
         # Immediate System Filter
         if not email_data["sender_email"] or \

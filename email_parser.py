@@ -34,9 +34,9 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None):
     # This pattern is now more generic to catch more languages. It looks for a date-like
     # pattern followed by a sender and a verb like "wrote/skrev/a écrit".
     gmail_style_pattern = re.compile(
-        r"on\s|den\s|le\s|am\s"  # Common starting words for dates in different languages
+        r"^(on|den|le|am)\s+\d{1,2}"  # More specific date pattern: day words + number
         r".*\n?.*(wrote|skrev|a écrit|schrieb):", # Date/time, sender, and the verb
-        re.IGNORECASE | re.DOTALL
+        re.IGNORECASE | re.MULTILINE
     )
     match = gmail_style_pattern.search(body_text)
     if match:
@@ -87,7 +87,7 @@ def get_name_from_email(email):
     except Exception:
         return "Support" # Fallback to the old label if anything goes wrong
 
-def _parse_graph_email_item(msg_graph_item):
+def parse_graph_email_item(msg_graph_item):
     email_data = {
         "graph_msg_id": msg_graph_item.get('id'),
         "subject": msg_graph_item.get('subject', ""),
@@ -97,16 +97,15 @@ def _parse_graph_email_item(msg_graph_item):
         "references_header_value": None,
         "cleaned_body": "",
         "body_preview": msg_graph_item.get('bodyPreview', ""),
-        # ADD THIS LINE:
-        "received_datetime": msg_graph_item.get('receivedDateTime', "") 
+        "received_datetime": msg_graph_item.get('receivedDateTime', "")
     }
     
     sender_info = msg_graph_item.get('from') or msg_graph_item.get('sender')
-    if sender_info and sender_info.get('emailAddress'): 
+    if sender_info and sender_info.get('emailAddress'):
         email_data["sender_email"] = sender_info['emailAddress'].get('address', '').lower()
         
     for header in msg_graph_item.get('internetMessageHeaders', []):
-        if header.get('name', '').lower() == 'references': 
+        if header.get('name', '').lower() == 'references':
             email_data["references_header_value"] = header.get('value')
             break
             
