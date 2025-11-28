@@ -31,12 +31,17 @@ def clean_email_body(body_text, original_sender_email_for_attribution=None):
             return cleaned_text
 
     # 2. The Gmail/Apple Mail "On [date], [sender] wrote:" Header (very reliable)
-    # This pattern is now more generic to catch more languages. It looks for a date-like
-    # pattern followed by a sender and a verb like "wrote/skrev/a écrit".
+    # UPDATED: 
+    # - Uses re.DOTALL to handle headers split across multiple lines.
+    # - SAFETY: Requires a digit (\d+) to exist (prevents matching text like "Den filen du skrev:").
+    # - Matches content between the verb "skrev" and the final colon.
     gmail_style_pattern = re.compile(
-        r"^(on|den|le|am)\s+\d{1,2}"  # More specific date pattern: day words + number
-        r".*\n?.*(wrote|skrev|a écrit|schrieb):", # Date/time, sender, and the verb
-        re.IGNORECASE | re.MULTILINE
+        r"^(on|den|le|am)\s+"                # Start of a line with "Den", "On", etc.
+        r".*?\d+"                            # <--- THIS IS CRITICAL: Must find a number (date)
+        r".*?"                               # Content between date and verb
+        r"\b(wrote|skrev|a écrit|schrieb)\b" # The verb (whole word only)
+        r".*?:\s*$",                         # Match the sender name/email until the final colon
+        re.IGNORECASE | re.MULTILINE | re.DOTALL
     )
     match = gmail_style_pattern.search(body_text)
     if match:
