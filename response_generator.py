@@ -68,16 +68,18 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         ---
         {problem_info_for_ulla['beskrivning']}
         ---
-        **Uppgift:** Studentens svar hjälpte dig att lösa problemet. Svara som Ulla och bekräfta glatt att problemet är borta.
+        **Uppgift:** Studentens svar hjälpte dig att lösa problemet! 
+        Du ser nu att allt fungerar som det ska (enligt beskrivningen i berättelsen).
+        Svara som Ulla och bekräfta glatt att problemet är borta. Tacka så mycket.
         """
     else:
         technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
         student_name = get_name_from_email(student_email)
 
-        # Truncate the conversation history to the specified number of turns.
+        # Truncate the conversation history
         capped_history_string = cap_history(full_history_string_for_ulla, max_turns=4)
 
-        # The prompt structure with history placed before the instructions remains.
+        # UPDATED PROMPT STRUCTURE
         user_prompt_content = f"""
         **Hittillsvarande Konversation:**
         {capped_history_string}
@@ -86,15 +88,20 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         {latest_student_message_for_ulla}
 
         ---
-        **PÅMINNELSE OM DIN SITUATION (Följ detta noga):**
+        **DINA INSTRUKTIONER FÖR DETTA SVAR:**
 
-        **Din Berättelse (För din personlighet):**
+        **1. Din Nuvarande Situation (Detta har hänt):**
         {problem_info_for_ulla['beskrivning']}
 
-        **KÄLLFAKTA (Simons lapp, din enda sanning):**
+        **2. TEKNISK VERKLIGHET (FACIT - Detta är vad som faktiskt visas på din skärm/dator):**
         {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
+        *(OBS: Om studenten frågar om något tekniskt som INTE står här ovanför -> Säg att du inte vet. Hitta inte på tekniska fel.)*
 
-        **Din Uppgift Nu:** Svara på det senaste meddelandet från {student_name} som karaktären Ulla. Kom ihåg dina "Naturliga Reaktioner" från dina grundinstruktioner. Föreslå ALDRIG en lösning själv.
+        **3. Din Uppgift:** 
+        Svara {student_name}.
+        - Om de ber dig kolla något: Titta i "TEKNISK VERKLIGHET" ovan. Om infon finns där, beskriv att du ser det på skärmen.
+        - Var inte för hjälpsam! Ge bara svar på exakt det de frågar om.
+        - Om de frågar vagt (t.ex. "Vad står det?"), spela lite förvirrad först eller ge bara en del av svaret.
         """
 
     messages_for_ulla = [
