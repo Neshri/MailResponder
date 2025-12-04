@@ -56,7 +56,18 @@ if __name__ == "__main__":
         else:
             logging.warning("Inbox emptying process reported one or more failures during deletion.")
         exit(0)
-
+    elif len(sys.argv) > 1 and sys.argv[1].lower() == "--reset":
+        # usage: python main.py --reset anton.lundgren94@gmail.com
+        from database import purge_student_data
+        
+        target_email = sys.argv[2] if len(sys.argv) > 2 else None
+        if not target_email:
+            print("FEL: Du måste ange en e-postadress. Ex: python main.py --reset test@example.com")
+            exit(1)
+            
+        purge_student_data(target_email)
+        print(f"\nUser {target_email} has been purged. They are now a 'New Student'.")
+        exit(0)
 
     logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
     if not PERSONA_MODEL or not EVAL_MODEL:

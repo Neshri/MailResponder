@@ -166,12 +166,12 @@ def update_student_level(student_email, new_next_level_index, last_completed_id=
 
 def set_active_problem(student_email, problem, problem_level_idx, graph_conversation_id):
     try:
+        current_level_for_insert, _ = get_student_progress(student_email)
         with get_db_connection(DB_FILE) as conn:
             cursor = conn.cursor()
             timestamp = datetime.datetime.now()
             initial_history_string = f"Ulla: {problem['start_prompt']}\n\n"
 
-            current_level_for_insert, _ = get_student_progress(student_email)
             cursor.execute(
                 "INSERT INTO student_progress (student_email, next_level_index, last_active_graph_convo_id) VALUES (?, ?, ?) "
                 "ON CONFLICT(student_email) DO UPDATE SET last_active_graph_convo_id = excluded.last_active_graph_convo_id",
@@ -538,3 +538,53 @@ def print_debug_db_content(email_filter=None, problem_filter=None):
     except Exception as e_ddb: print(f"Fel vid utskrift av debug_conversations: {e_ddb}")
 
     print("\n--- SLUT DEBUG DB UTSKRIFT ---")
+
+
+def purge_student_data(student_email):
+    """
+    Completely removes a student from all databases (Progress, Active, Completed, Debug).
+    Used for testing 'new student' scenarios.
+    """
+    logging.info(f"--- STARTING PURGE FOR {student_email} ---")
+    
+    # 1. Clean Main DB (Active Problems & Progress)
+    try:
+        with get_db_connection(DB_FILE) as conn:
+            cursor = conn.cursor()
+            
+            # Delete active problem first (to be safe with FKs)
+            cursor.execute("DELETE FROM active_problems WHERE student_email = ?", (student_email,))
+            active_deleted = cursor.rowcount
+            
+            # Delete student progress
+            cursor.execute("DELETE FROM student_progress WHERE student_email = ?", (student_email,))
+            progress_deleted = cursor.rowcount
+            
+            conn.commit()
+            print(f"[Main DB] Deleted active problems: {active_deleted}, Student progress: {progress_deleted}")
+    except Exception as e:
+        print(f"[Main DB] Error purging: {e}")
+
+    # 2. Clean Completed DB
+    try:
+        with get_db_connection(COMPLETED_DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM completed_conversations WHERE student_email = ?", (student_email,))
+            completed_deleted = cursor.rowcount
+            conn.commit()
+            print(f"[Completed DB] Deleted archived conversations: {completed_deleted}")
+    except Exception as e:
+        print(f"[Completed DB] Error purging: {e}")
+
+    # 3. Clean Debug DB
+    try:
+        with get_db_connection(DEBUG_DB_FILE) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM debug_conversations WHERE student_email = ?", (student_email,))
+            debug_deleted = cursor.rowcount
+            conn.commit()
+            print(f"[Debug DB] Deleted debug logs: {debug_deleted}")
+    except Exception as e:
+        print(f"[Debug DB] Error purging: {e}")
+
+    logging.info(f"--- PURGE COMPLETE FOR {student_email} ---")
