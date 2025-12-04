@@ -57,7 +57,6 @@ if __name__ == "__main__":
             logging.warning("Inbox emptying process reported one or more failures during deletion.")
         exit(0)
     elif len(sys.argv) > 1 and sys.argv[1].lower() == "--reset":
-        # usage: python main.py --reset anton.lundgren94@gmail.com
         from database import purge_student_data
         
         target_email = sys.argv[2] if len(sys.argv) > 2 else None
