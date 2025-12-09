@@ -5,14 +5,14 @@ import json
 from contextlib import contextmanager
 from config import DB_FILE, COMPLETED_DB_FILE, DEBUG_DB_FILE
 
-# --- Re-export Print Functions for main.py compatibility ---
+# --- Re-export Print Functions ---
 from db_inspector import print_db_content, print_debug_db_content
 
 # --- Database Core ---
 @contextmanager
 def get_db_connection(db_file):
     """Exposed context manager for safe database connections."""
-    conn = sqlite3.connect(db_file)
+    conn = sqlite3.connect(db_file, timeout=10.0) # Added timeout to handle locking better
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -23,18 +23,17 @@ def get_db_connection(db_file):
         conn.close()
 
 def _execute(db_file, query, params=(), fetch_one=False):
-    """Internal helper to reduce boilerplate."""
+    """Internal helper for SINGLE-STEP read/writes only."""
     try:
         with get_db_connection(db_file) as conn:
             cursor = conn.execute(query, params)
+            result = cursor.fetchone() if fetch_one else None
             conn.commit()
-            if fetch_one:
-                return cursor.fetchone()
-            return True
+            return result if fetch_one else True
     except sqlite3.Error:
         return False
 
-# --- Initialization (API Preserved) ---
+# --- Initialization ---
 def _run_schema(db_file, schemas, name):
     try:
         with get_db_connection(db_file) as conn:
@@ -90,10 +89,23 @@ def get_student_progress(email):
     return 0, None
 
 def update_student_level(email, new_idx, last_completed_id=None):
-    _execute(DB_FILE, "INSERT OR IGNORE INTO student_progress (student_email, next_level_index) VALUES (?, 0)", (email,))
-    if last_completed_id:
-        return _execute(DB_FILE, "UPDATE student_progress SET next_level_index = ?, last_completed_problem_id = ?, last_active_graph_convo_id = NULL WHERE student_email = ?", (new_idx, last_completed_id, email))
-    return _execute(DB_FILE, "UPDATE student_progress SET next_level_index = ? WHERE student_email = ?", (new_idx, email))
+    """
+    FIXED: Uses a single connection for atomicity.
+    Prevents database locking when called in rapid succession.
+    """
+    try:
+        with get_db_connection(DB_FILE) as conn:
+            # Ensure user exists
+            conn.execute("INSERT OR IGNORE INTO student_progress (student_email, next_level_index) VALUES (?, 0)", (email,))
+            
+            if last_completed_id:
+                conn.execute("UPDATE student_progress SET next_level_index = ?, last_completed_problem_id = ?, last_active_graph_convo_id = NULL WHERE student_email = ?", (new_idx, last_completed_id, email))
+            else:
+                conn.execute("UPDATE student_progress SET next_level_index = ? WHERE student_email = ?", (new_idx, email))
+            conn.commit()
+            return True
+    except sqlite3.Error:
+        return False
 
 def set_active_problem(email, problem, level_idx, graph_id):
     history = f"Ulla: {problem['start_prompt']}\n\n"
@@ -109,12 +121,15 @@ def set_active_problem(email, problem, level_idx, graph_id):
         return False
 
 def get_current_active_problem(email):
-    row = _execute(DB_FILE, "SELECT ap.problem_id, ap.conversation_history, sp.last_active_graph_convo_id FROM active_problems ap JOIN student_progress sp ON ap.student_email = sp.student_email WHERE ap.student_email = ?", (email,), fetch_one=True)
+    # Uses LEFT JOIN for safety
+    row = _execute(DB_FILE, "SELECT ap.problem_id, ap.conversation_history, sp.last_active_graph_convo_id FROM active_problems ap LEFT JOIN student_progress sp ON ap.student_email = sp.student_email WHERE ap.student_email = ?", (email,), fetch_one=True)
+    
     if not row: return None, None, None, None
     
     problem_info, level_idx = find_problem_by_id(row['problem_id'])
     if problem_info:
         return row['conversation_history'], problem_info, level_idx, row['last_active_graph_convo_id']
+    
     logging.error(f"DB Inconsistency: Problem {row['problem_id']} missing in catalog.")
     return None, None, None, None
 
@@ -128,8 +143,18 @@ def append_to_active_problem_history(email, text):
     return True
 
 def clear_active_problem(email):
-    _execute(DB_FILE, "UPDATE student_progress SET last_active_graph_convo_id = NULL WHERE student_email = ?", (email,))
-    return _execute(DB_FILE, "DELETE FROM active_problems WHERE student_email = ?", (email,))
+    """
+    FIXED: Uses a single connection for atomicity.
+    Prevents 'database locked' errors during cleanup.
+    """
+    try:
+        with get_db_connection(DB_FILE) as conn:
+            conn.execute("UPDATE student_progress SET last_active_graph_convo_id = NULL WHERE student_email = ?", (email,))
+            conn.execute("DELETE FROM active_problems WHERE student_email = ?", (email,))
+            conn.commit()
+            return True
+    except sqlite3.Error:
+        return False
 
 def save_completed_conversation(email, pid, lvl, history, eval_resp=None):
     return _execute(COMPLETED_DB_FILE, "INSERT INTO completed_conversations (student_email, problem_id, problem_level_index, full_conversation_history) VALUES (?, ?, ?, ?)", (email, pid, lvl, history))
