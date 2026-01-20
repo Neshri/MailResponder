@@ -8,13 +8,14 @@ from graph_api import make_graph_api_call, mark_email_as_read
 from database import (
     get_student_progress, 
     get_current_active_problem, 
+    set_student_track
 )
+from tracks import detect_track_trigger, get_track_config
 from email_parser import (
     parse_graph_email_item, 
     extract_student_message_from_reply, 
     get_name_from_email
 )
-from problem_catalog import START_PHRASES, NUM_LEVELS
 from conversation_manager import (
     handle_start_new_problem_main_thread, 
     llm_evaluation_and_reply_task, 
@@ -65,6 +66,13 @@ def graph_check_emails():
             # Execute Start Commands IMMEDIATELY to update DB state
             if handle_start_new_problem_main_thread(task['data'], task['level_idx']):
                 mark_email_as_read(task['data']["graph_msg_id"])
+        
+        elif task['type'] == 'track_switch':
+            # Handle Track Switch + Start Command
+            if set_student_track(task['data']["sender_email"], task['track_id']):
+                # After switching track, start the first problem (Level 0)
+                if handle_start_new_problem_main_thread(task['data'], 0):
+                    mark_email_as_read(task['data']["graph_msg_id"])
                 
         elif task['type'] == 'info_error':
             # Execute errors immediately
@@ -124,27 +132,53 @@ def _filter_batch_for_user(sender_email, emails):
     emails.sort(key=lambda x: x['received_datetime'])
     
     # 2. Get User State (CRITICAL: Do not filter based on Subject if user is Active)
-    _, active_problem_info, _, _ = get_current_active_problem(sender_email)
+    _, active_problem_info, _, _, _ = get_current_active_problem(sender_email)
     
     last_start_index = -1
     
-    # 3. Scan for the LATEST Reset Command
+    # 3. Scan for the LATEST Reset Command (Track or Level)
     for i, email in enumerate(emails):
         is_reset = False
-        
-        # Check Body (Always a valid reset)
         body_clean = email["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ")
-        if any(body_clean.startswith(p.lower()) for p in START_PHRASES):
-            is_reset = True
-            
-        # Check Subject (Only valid if NOT playing)
-        elif email["subject"]:
-            has_phrase = any(p.lower() in email["subject"].lower() for p in START_PHRASES)
-            if has_phrase:
-                if not active_problem_info:
-                    is_reset = True
-                else:
-                    logging.debug(f"Filter: Ignoring Subject-based Start from {sender_email} (User is Active).")
+        
+        # Check Track Trigger (Prioritized)
+        track_id, _ = detect_track_trigger(body_clean)
+        if track_id:
+             is_reset = True
+        
+        # Check Level Start (Existing logic) - We need to know THE USER'S TRACK to check valid phases
+        # But for filtering, we can check ALL tracks? Or just current? 
+        # Ideally just current.
+        if not is_reset:
+            # We don't have easy access to start phrases here without knowing the track... 
+            # But the user state is checked via `active_problem_info`.
+            # Let's import GLOBAL Start phrases as a fallback for now, OR fetch config.
+            # But wait, `_classify_email_action` does the heavy lifting. logic here is mostly heuristic.
+            # IF we assume standard phrases are unique enough...
+            # For Safety: If we don't check track triggers properly here, we might miss a reset.
+            # But we added track trigger check above.
+            pass
+
+        # ... (Rest of existing logic for START_PHRASES is less robust if phrases differ by track)
+        # However, typically "start phrases" are specific. 
+        # Let's keep existing logic but acknowledge it uses GLOBAL phrases (from problem_catalog).
+        # We should probably update `START_PHRASES` usage here too?
+        # TODO: Refactor filter to be track-aware if phrases diverge significantly.
+        # For now, `problem_catalog.START_PHRASES` is Ulla's.
+        
+        if not is_reset:
+             from problem_catalog import START_PHRASES as ULLA_PHRASES # Or use tracks
+             # Check Body (Always a valid reset)
+             if any(body_clean.startswith(p.lower()) for p in ULLA_PHRASES):
+                is_reset = True
+             # Check Subject
+             elif email["subject"]:
+                has_phrase = any(p.lower() in email["subject"].lower() for p in ULLA_PHRASES)
+                if has_phrase:
+                    if not active_problem_info:
+                        is_reset = True
+                    else:
+                        logging.debug(f"Filter: Ignoring Subject-based Start from {sender_email} (User is Active).")
 
         if is_reset:
             last_start_index = i
@@ -165,18 +199,41 @@ def _classify_email_action(email_data):
     """Decides WHAT to do with a single valid email."""
     sender = email_data["sender_email"]
     
-    # Fetch fresh DB state
-    student_next_level_idx, _ = get_student_progress(sender)
-    active_hist_str, active_problem_info, active_problem_level_idx, active_convo_id = get_current_active_problem(sender)
+    # Fetch fresh DB state including Track
+    student_next_level_idx, _, current_track_id = get_student_progress(sender)
+    active_hist_str, active_problem_info, active_problem_level_idx, active_convo_id, track_metadata = get_current_active_problem(sender)
     
-    # --- Check for Start Command ---
+    # Load Configuration
+    track_config = get_track_config(current_track_id)
+    track_start_phrases = track_config["start_phrases"]
+    num_levels = len(track_config["catalog"])
+    
+    body_clean = email_data["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ")
+
+    # --- 1. Check Track Switch ---
+    new_track_id, _ = detect_track_trigger(body_clean)
+    if new_track_id and new_track_id != current_track_id:
+        return {
+            'type': 'track_switch',
+            'track_id': new_track_id,
+            'data': email_data
+        }
+    # Also valid if same track but explicit trigger (Reset)
+    if new_track_id and new_track_id == current_track_id:
+        # Treat as a reset to Level 0
+        return {
+            'type': 'track_switch',
+            'track_id': new_track_id, # Same ID, triggers reset logic in orchestrator
+            'data': email_data
+        }
+
+    # --- 2. Check for Level Start Command (Within current track) ---
     detected_level = -1
     is_explicit = False
     
     # Body Check
-    body_clean = email_data["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ")
-    for idx, phrase in enumerate(START_PHRASES):
-        if idx >= NUM_LEVELS: break
+    for idx, phrase in enumerate(track_start_phrases):
+        if idx >= num_levels: break
         if body_clean.startswith(phrase.lower()):
             detected_level = idx
             is_explicit = True
@@ -184,8 +241,8 @@ def _classify_email_action(email_data):
             
     # Subject Check (Safe logic)
     if not is_explicit and not active_problem_info and email_data["subject"]:
-        for idx, phrase in enumerate(START_PHRASES):
-            if idx >= NUM_LEVELS: break
+        for idx, phrase in enumerate(track_start_phrases):
+            if idx >= num_levels: break
             if phrase.lower() in email_data["subject"].lower():
                 detected_level = idx
                 break
@@ -226,7 +283,9 @@ def _classify_email_action(email_data):
             'msg_content': msg_content,
             'level_idx': active_problem_level_idx,
             'convo_id': active_convo_id,
-            'db_entry': db_entry
+            'db_entry': db_entry,
+            'track_id': current_track_id, # Pass track ID
+            'track_metadata': track_metadata
         }
 
     # Fallback (No active problem, no start command)
@@ -254,7 +313,9 @@ def _execute_llm_tasks(tasks):
                 t['convo_id'],
                 t['email_data'],
                 t['db_entry'],
-                t['problem_info']['id']
+                t['problem_info']['id'],
+                t['track_id'], # Pass track ID
+                t['track_metadata']
             ): t for t in tasks
         }
         

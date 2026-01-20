@@ -5,7 +5,7 @@ from prompts import EVALUATOR_SYSTEM_PROMPT
 from llm_client import chat_with_model
 from database import append_evaluator_response_to_debug
 
-def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned, problem_id=None):
+def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned, problem_id=None, system_prompt=None):
     """
     Uses LLM to evaluate if the student's message contains a correct solution.
     """
@@ -28,9 +28,13 @@ Studentens SENASTE Meddelande:
 ---
 Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera studentens meddelande noggrant, generera först ett <think>-block med din fullständiga analys, och avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' på en ny rad.
 """
+    
+    # Fallback if not provided
+    if not system_prompt:
+        system_prompt = EVALUATOR_SYSTEM_PROMPT
 
     messages_for_evaluator = [
-        {'role': 'system', 'content': EVALUATOR_SYSTEM_PROMPT},
+        {'role': 'system', 'content': system_prompt},
         {'role': 'user', 'content': evaluator_prompt_content}
     ]
 
@@ -43,7 +47,7 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         if not response:
             return "[EJ_LÖST]", ""
 
-        raw_eval_reply_from_llm = response['message']['content'].strip()
+        raw_eval_reply_from_llm = response.strip()
         logging.info(f"Evaluator AI ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
         processed_eval_reply = re.sub(r"<think>.*?</think>", "", raw_eval_reply_from_llm, flags=re.DOTALL).strip()
 
@@ -54,11 +58,17 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         if problem_id:
             append_evaluator_response_to_debug(student_email, problem_id, raw_eval_reply_from_llm)
 
-        # Extract the final decision from the LLM response
+        # Extract the final decision or score from the LLM response
         lines = processed_eval_reply.strip().split('\n')
         final_decision = ""
+        score_adjustment = 0
         
-        # Look for [LÖST] or [EJ_LÖST] at the end of the response
+        # Look for [SCORE: +/-X] or [LÖST]/[EJ_LÖST]
+        # Check for Score first as it's the new multi-turn mechanic
+        score_match = re.search(r'\[SCORE:\s*([+-]?\d+)\]', processed_eval_reply)
+        if score_match:
+            score_adjustment = int(score_match.group(1))
+
         for line in reversed(lines):
             line = line.strip()
             match = re.match(r'^\s*\[(LÖST|EJ_LÖST)\]\s*$', line)
@@ -66,15 +76,11 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
                 final_decision = f"[{match.group(1)}]"
                 break
         
-        if final_decision == "[LÖST]":
-            logging.info(f"Evaluator AI ({student_email}): Bedömning [LÖST] (baserat på LLM:s slutgiltiga beslut)")
-            return "[LÖST]", raw_eval_reply_from_llm
-        elif final_decision == "[EJ_LÖST]":
-            logging.info(f"Evaluator AI ({student_email}): Bedömning [EJ_LÖST] (baserat på LLM:s slutgiltiga beslut)")
-            return "[EJ_LÖST]", raw_eval_reply_from_llm
-        else:
-            logging.warning(f"Evaluator AI ({student_email}): Kunde inte hitta ett slutgiltigt beslut i '{processed_eval_reply}', tolkar som [EJ_LÖST].")
-            return "[EJ_LÖST]", raw_eval_reply_from_llm
+        # Return result with potential score adjustment
+        result_marker = final_decision if final_decision else ("[LÖST]" if score_adjustment != 0 else "[EJ_LÖST]")
+        
+        # We'll return a richer response for conversation_manager to handle
+        return result_marker, raw_eval_reply_from_llm, score_adjustment
     except Exception as e:
         logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "[EJ_LÖST]", ""

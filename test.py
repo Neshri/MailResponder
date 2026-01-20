@@ -75,6 +75,9 @@ class TestDatabaseOperations(unittest.TestCase):
         self.test_debug_db_file = os.path.join(self.temp_dir, 'test_debug.db')
 
         # Patch the config values for testing
+        from llm_client import reset_llm_client
+        reset_llm_client()
+        
         self.patches = [
             patch('database.DB_FILE', self.test_db_file),
             patch('database.COMPLETED_DB_FILE', self.test_completed_db_file),
@@ -129,16 +132,17 @@ class TestDatabaseOperations(unittest.TestCase):
         init_db()
 
         # Test initial student (should not exist)
-        level, convo_id = get_student_progress('test@example.com')
+        level, convo_id, track_id = get_student_progress('test@example.com')
         self.assertEqual(level, 0)
         self.assertIsNone(convo_id)
+        self.assertEqual(track_id, 'ulla_classic')
 
         # Test update student level
         success = update_student_level('test@example.com', 1)
         self.assertTrue(success)
 
         # Test get updated progress
-        level, convo_id = get_student_progress('test@example.com')
+        level, convo_id, track_id = get_student_progress('test@example.com')
         self.assertEqual(level, 1)
 
     def test_active_problem_operations(self):
@@ -259,7 +263,7 @@ class TestLLMClient(unittest.TestCase):
             mock_init.return_value = mock_ollama
 
             response = chat_with_model('test_model', [{'role': 'user', 'content': 'Hello'}])
-            self.assertEqual(response, mock_response)
+            self.assertEqual(response, mock_response['message']['content'])
 
 class TestEmailProcessor(unittest.TestCase):
     """Test email processing functionality"""
@@ -267,7 +271,7 @@ class TestEmailProcessor(unittest.TestCase):
     @patch('email_processor.make_graph_api_call')
     @patch('email_processor.get_student_progress')
     @patch('email_processor.get_current_active_problem')
-    @patch('email_processor._parse_graph_email_item')
+    @patch('email_processor.parse_graph_email_item')
     @patch('email_processor.mark_email_as_read')
     def test_graph_check_emails_no_emails(self, mock_mark_read, mock_parse, mock_get_active, mock_get_progress, mock_api_call):
         """Test email checking when no unread emails"""
@@ -281,7 +285,7 @@ class TestEmailProcessor(unittest.TestCase):
     @patch('email_processor.make_graph_api_call')
     @patch('email_processor.get_student_progress')
     @patch('email_processor.get_current_active_problem')
-    @patch('email_processor._parse_graph_email_item')
+    @patch('email_processor.parse_graph_email_item')
     @patch('email_processor.mark_email_as_read')
     def test_graph_check_emails_system_email(self, mock_mark_read, mock_parse, mock_get_active, mock_get_progress, mock_api_call):
         """Test email checking with system email that should be skipped"""

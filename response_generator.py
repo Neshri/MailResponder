@@ -50,7 +50,8 @@ def cap_history(full_history_string, max_turns=4):
 
 
 def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
-                           latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker):
+                           latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker, 
+                           system_prompt=None):
     """
     Calls an LLM to generate Ulla's persona reply.
     """
@@ -60,7 +61,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
 
     logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    system_prompt_content = ULLA_PERSONA_PROMPT
+    system_prompt_content = system_prompt if system_prompt else ULLA_PERSONA_PROMPT
 
     if evaluator_decision_marker == "[LÖST]":
         user_prompt_content = f"""
@@ -118,7 +119,7 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         if not response:
             return "Åh nej, nu tappade jag visst bort mig lite..."
 
-        ulla_svar = response['message']['content'].strip()
+        ulla_svar = response.strip()
         ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
         ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
         ulla_svar = strip_markdown(ulla_svar)
