@@ -56,10 +56,10 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
     Calls an LLM to generate Ulla's persona reply.
     """
     if not PERSONA_MODEL:
-        logging.error(f"Ulla Persona ({student_email}): PERSONA_MODEL ej satt.")
+        logging.error(f"Persona ({student_email}): PERSONA_MODEL ej satt.")
         return "Glömde vad jag skulle säga..."
 
-    logging.info(f"Ulla Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
+    logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
     system_prompt_content = system_prompt if system_prompt else ULLA_PERSONA_PROMPT
 
@@ -123,8 +123,8 @@ def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_
         ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
         ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
         ulla_svar = strip_markdown(ulla_svar)
-        logging.info(f"Ulla Persona AI ({student_email}): Genererade svar: '{ulla_svar[:150]}...'")
+        logging.info(f"Persona AI ({student_email}): Genererade svar: '{ulla_svar[:150]}...'")
         return ulla_svar
     except Exception as e:
-        logging.error(f"Ulla Persona AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
+        logging.error(f"Persona AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "Åh nej, nu tappade jag visst bort mig lite..."

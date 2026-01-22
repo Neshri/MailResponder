@@ -17,7 +17,7 @@ def get_evaluator_decision(student_email, problem_description, solution_keywords
     technical_problem_desc = solution_keywords[0]
     actionable_solutions = solution_keywords[1:]
 
-    logging.info(f"Evaluator AI för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
+    logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
 
     evaluator_prompt_content = f"""Ullas Problem: "{problem_description}"
 Teknisk problembeskrivning: "{technical_problem_desc}"
@@ -48,11 +48,11 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
             return "[EJ_LÖST]", ""
 
         raw_eval_reply_from_llm = response.strip()
-        logging.info(f"Evaluator AI ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
+        logging.info(f"Evaluator ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
         processed_eval_reply = re.sub(r"<think>.*?</think>", "", raw_eval_reply_from_llm, flags=re.DOTALL).strip()
 
         if processed_eval_reply != raw_eval_reply_from_llm:
-            logging.info(f"Evaluator AI ({student_email}): Removed <think> block. Original: '{raw_eval_reply_from_llm}', Processed: '{processed_eval_reply}'")
+            logging.info(f"Evaluator ({student_email}): Removed <think> block. Original: '{raw_eval_reply_from_llm}', Processed: '{processed_eval_reply}'")
 
         # Save evaluator response to debug database
         if problem_id:
@@ -82,5 +82,5 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
         # We'll return a richer response for conversation_manager to handle
         return result_marker, raw_eval_reply_from_llm, score_adjustment
     except Exception as e:
-        logging.error(f"Evaluator AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
+        logging.error(f"Evaluator ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "[EJ_LÖST]", ""

@@ -143,7 +143,7 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     if not ulla_final_reply_text:
         result_package["error"] = True
         result_package["send_reply"] = False
-        logging.error(f"LLM-tråd ({student_email}): Ulla Persona genererade inget svar.")
+        logging.error(f"LLM-tråd ({student_email}): Persona ({track_id}) genererade inget svar.")
 
     return result_package
 
