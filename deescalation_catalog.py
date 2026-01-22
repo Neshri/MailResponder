@@ -1,4 +1,4 @@
-# --- EVIL PERSONA TRACK (GUNILLA) ---
+# --- EVIL PERSONA TRACK (Arga Alex) ---
 EVIL_START_PHRASES = ["starta deeskalering"]
 
 EVIL_CATALOGUES = [
