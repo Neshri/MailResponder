@@ -85,14 +85,15 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     is_deescalation = (track_id == "evil_persona")
     if is_deescalation:
         current_anger = track_metadata.get("anger_level", 100)
-        # LLM specifies delta, we apply it. 
-        # Note: In prompts, we'll tell LLM to use [SCORE: -20] to lower anger.
-        new_anger = max(0, min(150, current_anger + score_adjustment))
+        
+        # 1. Cap anger at 100 (prompts don't handle >100 well) and floor at 0
+        new_anger = max(0, min(100, current_anger + score_adjustment))
         track_metadata["anger_level"] = new_anger
         logging.info(f"Deescalation ({student_email}): Anger adjusted by {score_adjustment}. Current Anger: {new_anger}")
         
-        # Victory condition: level is solved only if anger is 0
-        is_solved_by_evaluator = (new_anger <= 0)
+        # 2. MATCH PROMPT DEFINITION: Solved if anger is in the 0-9 range (< 10)
+        is_solved_by_evaluator = (new_anger < 10)
+        
         if is_solved_by_evaluator:
             evaluator_marker = "[LÖST]"
         else:
@@ -101,13 +102,17 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 
     # 2. Generate Reply
-    # Inject anger level into context for Persona if available
     context_enhanced_history = full_history_string
     if is_deescalation:
-        anger_desc = f"\n[OBS: Gunillas nuvarande ilskenivå är {track_metadata['anger_level']}/100. "
-        if track_metadata['anger_level'] > 80: anger_desc += "Hon är rasande!]"
-        elif track_metadata['anger_level'] > 40: anger_desc += "Hon är irriterad och vaksam.]"
-        else: anger_desc += "Hon börjar lugna ner sig men är fortfarande skeptisk.]"
+        # 3. SYNTAX FIX: Inject exactly the tag the Prompt is looking for: [Ilskenivå: X]
+        # We can keep the descriptive text for flavor, but the TAG is mandatory.
+        anger_desc = f"\n[SYSTEM UPDATE: Ilskenivå: {track_metadata['anger_level']}]"
+        
+        # Optional: Add the prompt hint helper again if you want to be extra safe
+        if track_metadata['anger_level'] >= 70: anger_desc += " (STATUS: RASERI - Skrik och vägra samarbeta)"
+        elif track_metadata['anger_level'] >= 40: anger_desc += " (STATUS: BITTER - Var skeptisk och hånfull)"
+        elif track_metadata['anger_level'] >= 10: anger_desc += " (STATUS: SUR - Korta svar)"
+        else: anger_desc += " (STATUS: LUGN - Acceptera lösningen)"
         context_enhanced_history += anger_desc
 
     ulla_final_reply_text = get_ulla_persona_reply(
