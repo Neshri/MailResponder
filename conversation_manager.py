@@ -76,6 +76,7 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         student_email,
         evaluator_context,
         latest_student_message_cleaned,
+        scenario.eval_model,
         problem_info_id,
         system_prompt=scenario.evaluator_prompt
     )

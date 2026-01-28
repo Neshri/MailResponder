@@ -199,7 +199,7 @@ def main():
     if args.list:
         print("Available Scenarios:")
         for s in scenarios:
-            print(f" - '{s.name}' (Prefix: {s.db_manager.db_prefix}, Email: {s.target_email})")
+            print(f" - '{s.name}' (Prefix: {s.db_prefix}, Email: {s.target_email})")
         return
 
     # Select Scenario

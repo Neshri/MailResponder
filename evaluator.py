@@ -5,15 +5,15 @@ from config import EVAL_MODEL
 from prompts import EVALUATOR_SYSTEM_PROMPT
 from llm_client import chat_with_model
 
-def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, problem_id=None, system_prompt=None):
+def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, model_name, problem_id=None, system_prompt=None):
     """
     Uses LLM to evaluate if the student's message contains a correct solution.
     """
-    if not EVAL_MODEL:
-        logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt.")
-        return "[EJ_LÖST]", ""
+    if not model_name:
+        logging.error(f"Evaluator ({student_email}): model_name ej satt.")
+        return "[EJ_LÖST]", "", 0
 
-    logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
+    logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{model_name}'.")
 
     # Serialize context for the LLM
     context_str = json.dumps(evaluator_context, indent=2, ensure_ascii=False)
@@ -45,12 +45,12 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
 
     try:
         response = chat_with_model(
-            model=EVAL_MODEL,
+            model=model_name,
             messages=messages_for_evaluator,
             options={'temperature': 0.1, 'num_predict': 2500}
         )
         if not response:
-            return "[EJ_LÖST]", ""
+            return "[EJ_LÖST]", "", 0
 
         raw_eval_reply_from_llm = response.strip()
         logging.info(f"Evaluator ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
@@ -84,4 +84,4 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
         return result_marker, raw_eval_reply_from_llm, score_adjustment
     except Exception as e:
         logging.error(f"Evaluator ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
-        return "[EJ_LÖST]", ""
+        return "[EJ_LÖST]", "", 0
