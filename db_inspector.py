@@ -225,9 +225,9 @@ def main():
     
     # Access private attributes is risky but db_manager logic is simple
     db_paths = {
-        "main": target_scenario.db_manager.db_path,
-        "completed": target_scenario.db_manager.completed_db_path,
-        "debug": target_scenario.db_manager.debug_db_path
+        "main": target_scenario.db_manager.db_file,
+        "completed": target_scenario.db_manager.completed_db_file,
+        "debug": target_scenario.db_manager.debug_db_file
     }
 
     print_db_content(db_paths, email_filter=args.email)
