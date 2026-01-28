@@ -1,32 +1,39 @@
 import sqlite3
 import json
 import re
-from config import DB_FILE, COMPLETED_DB_FILE, DEBUG_DB_FILE
+import argparse
+import sys
+import os
+import logging
+from scenario_manager import ScenarioManager
 
-# Local helper to avoid circular dependency with database.py
+# Setup basic logging for the inspector
+logging.basicConfig(level=logging.ERROR, format='%(levelname)s: %(message)s')
+
 def _get_inspector_conn(db_file):
-    conn = sqlite3.connect(db_file)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def _find_level_idx_for_print(problem_id):
-    from problem_catalog import PROBLEM_CATALOGUES
-    for level_idx, level_catalogue in enumerate(PROBLEM_CATALOGUES):
-        for problem in level_catalogue:
-            if problem['id'] == problem_id:
-                return level_idx
-    return -1
-
-def print_db_content(email_filter=None):
-    if email_filter:
-        print(f"--- DB UTSKRIFT (Filtrerat på: {email_filter}) ---")
-    else:
-        print("--- DB UTSKRIFT (All data) ---")
-
-    # --- 1. Student Progress ---
-    print("\n--- UTSKRIFT STUDENT PROGRESS ---")
+    if not os.path.exists(db_file):
+        print(f"[!] Database file not found: {db_file}")
+        return None
     try:
-        with _get_inspector_conn(DB_FILE) as conn:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"[!] Failed to connect to {db_file}: {e}")
+        return None
+
+def print_db_content(db_paths, email_filter=None):
+    print(f"\n{'='*60}")
+    print(f"       DATABASE INSPECTION REPORT")
+    print(f"{'='*60}")
+    if email_filter:
+        print(f"FILTER: email='{email_filter}'")
+    
+    # --- 1. Student Progress ---
+    print(f"\n--- STUDENT PROGRESS ({os.path.basename(db_paths['main'])}) ---")
+    conn = _get_inspector_conn(db_paths['main'])
+    if conn:
+        try:
             cursor = conn.cursor()
             query = "SELECT * FROM student_progress ORDER BY student_email"
             params = []
@@ -35,15 +42,21 @@ def print_db_content(email_filter=None):
                 params.append(email_filter)
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            if not rows: print("Tabellen student_progress är tom (eller inget matchar filter).")
+            if not rows: 
+                print("  [Empty or No Match]")
             else:
-                for r in rows: print(dict(r))
-    except Exception as e: print(f"Fel vid utskrift av student_progress: {e}")
+                for r in rows: 
+                    print(f"  {dict(r)}")
+        except Exception as e: 
+            print(f"  [Error]: {e}")
+        finally:
+            conn.close()
 
     # --- 2. Active Problems ---
-    print("\n--- UTSKRIFT ACTIVE PROBLEMS ---")
-    try:
-        with _get_inspector_conn(DB_FILE) as conn:
+    print(f"\n--- ACTIVE PROBLEMS ({os.path.basename(db_paths['main'])}) ---")
+    conn = _get_inspector_conn(db_paths['main'])
+    if conn:
+        try:
             cursor = conn.cursor()
             query = "SELECT * FROM active_problems ORDER BY student_email"
             params = []
@@ -52,20 +65,27 @@ def print_db_content(email_filter=None):
                 params.append(email_filter)
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            if not rows: print("Tabellen active_problems är tom (eller inget matchar filter).")
+            if not rows: 
+                print("  [Empty or No Match]")
             else:
                 for r in rows:
                     d = dict(r)
-                    level_idx = _find_level_idx_for_print(d.get('problem_id'))
-                    level_display = level_idx + 1 if level_idx != -1 else "N/A"
-                    print(f"Student: {d.get('student_email')}, Problem ID: {d.get('problem_id')}, Level: {level_display}")
-                    print(f"  History:\n{d.get('conversation_history', '')}")
-    except Exception as e: print(f"Fel vid utskrift av active_problems: {e}")
+                    print(f"  student: {d.get('student_email')}")
+                    print(f"  problem_id: {d.get('problem_id')}")
+                    print(f"  level_index: {d.get('current_level_index')}")
+                    print(f"  metadata: {d.get('track_metadata')}")
+                    print(f"  history_len: {len(d.get('conversation_history', ''))} chars")
+                    print("-" * 20)
+        except Exception as e: 
+            print(f"  [Error]: {e}")
+        finally:
+            conn.close()
 
     # --- 3. Completed Conversations ---
-    print("\n--- UTSKRIFT COMPLETED CONVERSATIONS ---")
-    try:
-        with _get_inspector_conn(COMPLETED_DB_FILE) as conn:
+    print(f"\n--- COMPLETED CONVERSATIONS ({os.path.basename(db_paths['completed'])}) ---")
+    conn = _get_inspector_conn(db_paths['completed'])
+    if conn:
+        try:
             cursor = conn.cursor()
             query = "SELECT * FROM completed_conversations ORDER BY completed_at DESC"
             params = []
@@ -74,104 +94,146 @@ def print_db_content(email_filter=None):
                 params.append(email_filter)
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            if not rows: print("Tabellen completed_conversations är tom (eller inget matchar filter).")
+            if not rows: 
+                print("  [Empty or No Match]")
             else:
                 for r in rows:
                     d = dict(r)
-                    print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}, Completed: {d.get('completed_at')}")
-                    print(f"  Conversation:\n{d.get('full_conversation_history', '')}")
-    except Exception as e: print(f"Fel vid utskrift av completed_conversations: {e}")
-    print("\n--- SLUT DB UTSKRIFT ---")
-
-
-def print_debug_db_content(email_filter=None, problem_filter=None):
-    if email_filter or problem_filter:
-        print(f"--- DEBUG DB UTSKRIFT (Filter: email={email_filter}, problem={problem_filter}) ---")
-    else:
-        print("--- DEBUG DB UTSKRIFT (All data) ---")
-
-    print("\n--- UTSKRIFT DEBUG CONVERSATIONS ---")
-    try:
-        with _get_inspector_conn(DEBUG_DB_FILE) as conn:
+                    print(f"  [{d.get('completed_at')}] {d.get('student_email')} - Problem {d.get('problem_id')}")
+        except Exception as e: 
+            print(f"  [Error]: {e}")
+        finally:
+            conn.close()
+    
+    # --- 4. Debug Conversations ---
+    # Only print simplified view here, use --debug for full details
+    print(f"\n--- DEBUG DB SUMMARY ({os.path.basename(db_paths['debug'])}) ---")
+    conn = _get_inspector_conn(db_paths['debug'])
+    if conn:
+        try:
             cursor = conn.cursor()
-            query = "SELECT * FROM debug_conversations ORDER BY id ASC"
-            params = []
-            if email_filter:
-                query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY id ASC"
-                params.append(email_filter)
-            elif problem_filter:
-                query = "SELECT * FROM debug_conversations WHERE problem_id = ? ORDER BY id ASC"
-                params.append(problem_filter)
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
+            query = "SELECT COUNT(*) as count FROM debug_conversations"
+            cursor.execute(query)
+            count = cursor.fetchone()['count']
+            print(f"  Total records: {count}")
+            # Could add last active here
+        except Exception as e:
+            print(f"  [Error]: {e}")
+        finally:
+            conn.close()
+
+    print(f"\n{'='*60}\n")
+
+
+def print_full_debug_history(db_paths, email_filter=None):
+    print(f"\n{'!'*60}")
+    print(f"       FULL DEBUG HISTORY INSPECTION")
+    print(f"{'!'*60}")
+    
+    conn = _get_inspector_conn(db_paths['debug'])
+    if not conn: return
+
+    try:
+        cursor = conn.cursor()
+        query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
+        params = []
+        if email_filter:
+            query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated DESC"
+            params.append(email_filter)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        if not rows:
+            print("  [No debug records found]")
+            return
+
+        for r in rows:
+            d = dict(r)
+            print(f"\n>>> STUDENT: {d.get('student_email')} | PROBLEM: {d.get('problem_id')} | UPDATED: {d.get('last_updated')}")
             
-            if not rows: 
-                print("Tabellen debug_conversations är tom.")
-                return
+            history = d.get('full_conversation_history', '')
+            try:
+                eval_responses = json.loads(d.get('evaluator_responses', '[]'))
+            except:
+                eval_responses = []
 
-            for r in rows:
-                d = dict(r)
-                print(f"Student: {d.get('student_email')}, Problem: {d.get('problem_id')}")
-                print(f"  Last Updated: {d.get('last_updated')}")
+            print(f"    Evaluator Responses Stored: {len(eval_responses)}")
+            print("    ------------------------------------------------")
+            
+            # Simple dumb print of history logic for robustness
+            print(history)
+            
+            if eval_responses:
+                print("\n    [LATEST EVALUATOR LOGS]")
+                for item in eval_responses[-3:]: # Show last 3
+                    print(f"    -- {item.get('timestamp')}: {str(item.get('response'))[:100]}...")
 
-                # --- Strict Reconstruction Logic (Preserved) ---
-                history = d.get('full_conversation_history', '')
-                try:
-                    eval_responses = json.loads(d.get('evaluator_responses', '[]'))
-                except:
-                    eval_responses = []
+            print("    " + ("-"*48))
 
-                print("\n  --- RAW DATA ---")
-                print(f"  Evaluator Responses: {len(eval_responses)} entries")
-                print("  ----------------\n")
+    except Exception as e:
+        print(f"[Error reading debug DB]: {e}")
+    finally:
+        conn.close()
 
-                history_lines = [line.strip() for line in history.split('\n\n') if line.strip()]
 
-                # Identify Student Prefix
-                student_prefix = "Student:"
-                for line in history_lines:
-                    if not line.startswith("Ulla:") and not line.lower().startswith("jättebra!") and not line.startswith("Ulla ("):
-                         parts = line.split(':', 1)
-                         if len(parts) > 1:
-                             student_prefix = parts[0] + ":"
-                             break
-                
-                # Build Timeline
-                timeline = []
-                eval_idx = 0
+def main():
+    parser = argparse.ArgumentParser(description="Inspect MailResponder Database")
+    parser.add_argument("--scenario", "-s", help="Name of the scenario to inspect (e.g. 'Ulla Support')")
+    parser.add_argument("--email", "-e", help="Filter results by student email")
+    parser.add_argument("--debug", "-d", action="store_true", help="Print full debug history")
+    parser.add_argument("--list", "-l", action="store_true", help="List available scenarios and exit")
 
-                for line in history_lines:
-                    if line.startswith("Ulla:") or line.startswith("Ulla ("):
-                        timeline.append({'type': 'ULLA', 'content': line})
-                    elif line.lower().startswith("jättebra!"):
-                        timeline.append({'type': 'COMPLETION', 'content': line})
-                    elif line.startswith(student_prefix):
-                        timeline.append({'type': 'STUDENT', 'content': line})
-                        if eval_idx < len(eval_responses):
-                            timeline.append({'type': 'EVAL', 'data': eval_responses[eval_idx]})
-                            eval_idx += 1
-                    else:
-                        # Merge into previous
-                        if timeline:
-                            timeline[-1]['content'] += "\n\n" + line
-                        else:
-                            print(f"  [INFO] {line}")
+    args = parser.parse_args()
 
-                # Print Timeline
-                for event in timeline:
-                    if event['type'] == 'ULLA':
-                        print(f"  [ULLA] {event['content']}")
-                    elif event['type'] == 'STUDENT':
-                        print(f"  [STUDENT] {event['content']}")
-                    elif event['type'] == 'COMPLETION':
-                        print(f"  [COMPLETION] {event['content']}")
-                    elif event['type'] == 'EVAL':
-                        ts = event['data'].get('timestamp', 'Unknown')
-                        print(f"    -> [EVALUATOR {ts}]:")
-                        resp = event['data'].get('response', '').replace('</end_of_turn>', '').strip()
-                        resp = re.sub(r'^```\s*|\s*```$', '', resp)
-                        for l in resp.split('\n'):
-                            if l.strip(): print(f"       {l}")
-                    print()
-                print("-" * 80)
-    except Exception as e: print(f"Error printing debug DB: {e}")
+    # Load Scenarios
+    scenario_manager = ScenarioManager()
+    scenario_manager.load_scenarios()
+    scenarios = scenario_manager.get_scenarios()
+
+    if not scenarios:
+        print("[!] No scenarios found in 'scenarios/' directory.")
+        return
+
+    # List mode
+    if args.list:
+        print("Available Scenarios:")
+        for s in scenarios:
+            print(f" - '{s.name}' (Prefix: {s.db_manager.db_prefix}, Email: {s.target_email})")
+        return
+
+    # Select Scenario
+    target_scenario = None
+    if args.scenario:
+        # Case-insensitive partial match
+        for s in scenarios:
+            if args.scenario.lower() in s.name.lower():
+                target_scenario = s
+                break
+        if not target_scenario:
+            print(f"[!] Scenario matching '{args.scenario}' not found.")
+            print("Available: " + ", ".join([f"'{s.name}'" for s in scenarios]))
+            return
+    else:
+        # Default to the first one active if not specified
+        target_scenario = scenarios[0]
+        print(f"[i] No scenario specified. Defaulting to: '{target_scenario.name}'")
+
+    # Resolve DB Paths using the scenario's DB Manager
+    # We reconstruct paths manually because db_manager might be initialized relative to CWD
+    # but let's try to trust the manager's attributes.
+    
+    # Access private attributes is risky but db_manager logic is simple
+    db_paths = {
+        "main": target_scenario.db_manager.db_path,
+        "completed": target_scenario.db_manager.completed_db_path,
+        "debug": target_scenario.db_manager.debug_db_path
+    }
+
+    print_db_content(db_paths, email_filter=args.email)
+
+    if args.debug:
+        print_full_debug_history(db_paths, email_filter=args.email)
+
+if __name__ == "__main__":
+    main()
