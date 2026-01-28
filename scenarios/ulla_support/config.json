@@ -1,0 +1,7 @@
+{
+    "scenario_name": "Ulla Support",
+    "description": "The classic Ulla tech support simulation.",
+    "target_email_env_var": "BOT_EMAIL_ADDRESS",
+    "db_prefix": "ulla",
+    "image_warning_message": "Kära nån, min syn är inte vad den har varit, så jag använder ett speciellt uppläsningsprogram som läser texten i mejlen för mig. Tyvärr kan det inte beskriva bilder, så om du skickade med en bild kan jag inte se den. Om det var något viktigt på bilden får du gärna beskriva det med ord!"
+}

@@ -1,57 +1,48 @@
 import logging
-import datetime
 import random
-from database import (
-    get_student_progress, update_student_level, set_active_problem,
-    get_current_active_problem, append_to_active_problem_history, clear_active_problem,
-    save_completed_conversation
-)
-from tracks import get_track_config, TRACKS
 from graph_api import graph_send_email
-from config import ULLA_IMAGE_WARNING
 from evaluator import get_evaluator_decision
-from response_generator import get_ulla_persona_reply
+from response_generator import get_persona_reply
 from email_parser import extract_student_message_from_reply
 
-def handle_start_new_problem_main_thread(email_data, student_next_eligible_level_idx):
+# Note: We do not import Scenario for runtime usage to avoid circular imports, 
+# but we expect 'scenario' arguments to be of type Scenario.
+
+def handle_start_new_problem_main_thread(email_data, student_next_eligible_level_idx, scenario):
     """
     Handle the logic for starting a new problem when a user sends a start command.
     """
-    # 1. Determine Track
-    _, _, current_track_id = get_student_progress(email_data["sender_email"])
-    track_config = get_track_config(current_track_id)
-    
-    # 2. Get Catalog from Track
-    problem_catalog = track_config["catalog"]
+    # 2. Get Catalog from Scenario
+    problem_catalog = scenario.problems
     
     if student_next_eligible_level_idx >= len(problem_catalog):
-         logging.error(f"Nivåindex {student_next_eligible_level_idx} utanför katalogen för spår {current_track_id}!")
+         logging.error(f"Nivåindex {student_next_eligible_level_idx} utanför katalogen för scenario {scenario.name}!")
          return False
 
     problem_list_for_level = problem_catalog[student_next_eligible_level_idx]
     
     if not problem_list_for_level:
-        logging.error(f"Inga problem definierade för nivåindex {student_next_eligible_level_idx} i spår {current_track_id}!")
+        logging.error(f"Inga problem definierade för nivåindex {student_next_eligible_level_idx} i scenario {scenario.name}!")
         return False
         
     problem = random.choice(problem_list_for_level)
     
-    # Initialize Track Metadata if needed
+    # Initialize Track Metadata if needed (Default empty for generic scenarios)
     track_metadata = {}
-    if current_track_id == "evil_persona":
-        track_metadata = {"anger_level": 100}
+    # Example: if scenario.name == "Evil Persona": track_metadata = {"anger_level": 100}
 
-    if set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
+    if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
         reply_subject = email_data["subject"]
         reply_body = problem['start_prompt']
         if email_data.get("has_images"):
-            reply_body = ULLA_IMAGE_WARNING + "\n\n" + reply_body
-        if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"]):
-            logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']} [Spår: {current_track_id}]")
+            reply_body = scenario.image_warning + "\n\n" + reply_body
+        
+        if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"], from_user_id=scenario.target_email):
+            logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']} [Scenario: {scenario.name}]")
             return True
         else:
             logging.error("Misslyckades skicka initialt problem för ny nivå.")
-            clear_active_problem(email_data["sender_email"])
+            scenario.db_manager.clear_active_problem(email_data["sender_email"])
             return False
     else:
         logging.error("Misslyckades sätta aktivt problem i DB för ny nivå.")
@@ -61,68 +52,56 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
                                    latest_student_message_cleaned, problem_level_idx_for_prompt,
                                    active_problem_convo_id_db,
                                    email_data_for_result, student_entry_for_db, problem_info_id, 
-                                   track_id="ulla_classic",
-                                   track_metadata=None): # Added track_metadata
+                                   scenario,
+                                   track_metadata=None): 
     """
     Handle LLM evaluation and reply generation for active problems.
     """
-    logging.info(f"LLM-tråd (_llm_evaluation_and_reply_task) startad för {student_email} [Spår: {track_id}]")
+    logging.info(f"LLM-tråd (_llm_evaluation_and_reply_task) startad för {student_email} [Scenario: {scenario.name}]")
     
-    track_config = get_track_config(track_id)
     if track_metadata is None: track_metadata = {}
 
     # 1. Evaluate
+    # 1. Evaluate
+    # Extract Contexts - Support legacy and new structure
+    evaluator_context = problem_info.get('evaluator_context')
+    if not evaluator_context: 
+        # Fallback/Legacy construction if 'losning_nyckelord' exists directly
+        evaluator_context = {
+            "source_problem_description": problem_info.get('beskrivning', ''),
+            "solution_keywords": problem_info.get('losning_nyckelord', [])
+        }
+
     evaluator_marker, evaluator_raw_response, score_adjustment = get_evaluator_decision(
         student_email,
-        problem_info['beskrivning'],
-        problem_info['losning_nyckelord'],
+        evaluator_context,
         latest_student_message_cleaned,
         problem_info_id,
-        system_prompt=track_config["evaluator_prompt"]
+        system_prompt=scenario.evaluator_prompt
     )
     
-    # Update score if it's a de-escalation track
-    is_deescalation = (track_id == "evil_persona")
-    if is_deescalation:
-        current_anger = track_metadata.get("anger_level", 100)
-        
-        # 1. Cap anger at 100 (prompts don't handle >100 well) and floor at 0
-        new_anger = max(0, min(100, current_anger + score_adjustment))
-        track_metadata["anger_level"] = new_anger
-        logging.info(f"Deescalation ({student_email}): Anger adjusted by {score_adjustment}. Current Anger: {new_anger}")
-        
-        # 2. MATCH PROMPT DEFINITION: Solved if anger is in the 0-9 range (< 10)
-        is_solved_by_evaluator = (new_anger < 10)
-        
-        if is_solved_by_evaluator:
-            evaluator_marker = "[LÖST]"
-        else:
-            evaluator_marker = "[EJ_LÖST]"
-    else:
-        is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
+    # TODO: Add specific "Evil Persona" logic here if needed, checking scenario.name or type
+    is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 
     # 2. Generate Reply
     context_enhanced_history = full_history_string
-    if is_deescalation:
-        # 3. SYNTAX FIX: Inject exactly the tag the Prompt is looking for: [Ilskenivå: X]
-        # We can keep the descriptive text for flavor, but the TAG is mandatory.
-        anger_desc = f"\n[SYSTEM UPDATE: Ilskenivå: {track_metadata['anger_level']}]"
-        
-        # Optional: Add the prompt hint helper again if you want to be extra safe
-        if track_metadata['anger_level'] >= 70: anger_desc += " (STATUS: RASERI - Skrik och vägra samarbeta)"
-        elif track_metadata['anger_level'] >= 40: anger_desc += " (STATUS: BITTER - Var skeptisk och hånfull)"
-        elif track_metadata['anger_level'] >= 10: anger_desc += " (STATUS: SUR - Korta svar)"
-        else: anger_desc += " (STATUS: LUGN - Acceptera lösningen)"
-        context_enhanced_history += anger_desc
-
-    ulla_final_reply_text = get_ulla_persona_reply(
+    
+    persona_context = problem_info.get('persona_context')
+    if not persona_context:
+        # Fallback/Legacy
+        persona_context = {
+            "description": problem_info.get('beskrivning', ''),
+            "technical_facts": problem_info.get('tekniska_fakta', {})
+        }
+    
+    ulla_final_reply_text = get_persona_reply(
         student_email,
         context_enhanced_history,
-        problem_info,
+        persona_context,
         latest_student_message_cleaned,
         problem_level_idx_for_prompt,
         evaluator_marker,
-        system_prompt=track_config["persona_prompt"]
+        system_prompt=scenario.persona_prompt
     )
 
     result_package = {
@@ -142,17 +121,17 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         "full_history_string": full_history_string,
         "has_images": email_data_for_result["has_images"],
         "student_entry_for_db": student_entry_for_db,
-        "new_track_metadata": track_metadata # Include updated metadata
+        "new_track_metadata": track_metadata 
     }
 
     if not ulla_final_reply_text:
         result_package["error"] = True
         result_package["send_reply"] = False
-        logging.error(f"LLM-tråd ({student_email}): Persona ({track_id}) genererade inget svar.")
+        logging.error(f"LLM-tråd ({student_email}): Persona ({scenario.name}) genererade inget svar.")
 
     return result_package
 
-def process_completed_problem(result_package, email_data):
+def process_completed_problem(result_package, email_data, scenario):
     """
     Process the completion of a problem, including level advancement and archiving.
     """
@@ -162,13 +141,10 @@ def process_completed_problem(result_package, email_data):
         active_lvl_idx = result_package["active_problem_level_idx"]
         prob_id = result_package["active_problem_info_id"]
         
-        # Determine Track
-        _, _, current_track_id = get_student_progress(email_data["sender_email"])
-        track_config = get_track_config(current_track_id)
-        start_phrases = track_config["start_phrases"]
-        num_levels = len(track_config["catalog"])
+        start_phrases = scenario.start_phrases
+        num_levels = len(scenario.problems)
 
-        student_current_max_level_idx, _, _ = get_student_progress(email_data["sender_email"]) # Note: calling twice, could optimize but OK
+        student_current_max_level_idx, _, _ = scenario.db_manager.get_student_progress(email_data["sender_email"]) 
         potential_new_next_level_idx = active_lvl_idx + 1
 
         completion_msg = f"\n\nJättebra! Problem {prob_id} (Nivå {active_lvl_idx + 1}) är löst!"
@@ -192,21 +168,21 @@ def process_completed_problem(result_package, email_data):
     if graph_send_email(email_data["sender_email"], reply_s, result_package["ulla_final_reply_body"],
                         result_package["in_reply_to_for_send"],
                         result_package["references_for_send"],
-                        result_package["convo_id_for_send"]):
+                        result_package["convo_id_for_send"],
+                        from_user_id=scenario.target_email):
         # Update Metadata if provided (e.g. stateful score tracking)
-        from database import update_active_problem_metadata
         if result_package.get("new_track_metadata"):
-            update_active_problem_metadata(email_data["sender_email"], result_package["new_track_metadata"])
+            scenario.db_manager.update_active_problem_metadata(email_data["sender_email"], result_package["new_track_metadata"])
 
         # FIRST, save the student's message that we passed through.
-        append_to_active_problem_history(email_data["sender_email"], result_package["student_entry_for_db"])
+        scenario.db_manager.append_to_active_problem_history(email_data["sender_email"], result_package["student_entry_for_db"])
 
         # SECOND, save Ulla's reply.
-        append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
+        scenario.db_manager.append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
         if is_solved:
             # --- Save the completed conversation before clearing it ---
             final_history_for_archive = result_package["full_history_string"] + ulla_db_entry
-            save_completed_conversation(
+            scenario.db_manager.save_completed_conversation(
                 student_email=email_data["sender_email"],
                 problem_id=result_package["active_problem_info_id"],
                 problem_level_index=result_package["active_problem_level_idx"],
@@ -214,12 +190,12 @@ def process_completed_problem(result_package, email_data):
                 evaluator_response=result_package.get("evaluator_response")
             )
 
-            clear_active_problem(email_data["sender_email"])
+            scenario.db_manager.clear_active_problem(email_data["sender_email"])
 
-            current_progress_level_before_update, _, _ = get_student_progress(email_data["sender_email"])
+            current_progress_level_before_update, _, _ = scenario.db_manager.get_student_progress(email_data["sender_email"])
             new_next_level_for_db = max(current_progress_level_before_update, result_package["active_problem_level_idx"] + 1)
 
-            update_student_level(email_data["sender_email"],
+            scenario.db_manager.update_student_level(email_data["sender_email"],
                                  new_next_level_for_db,
                                  result_package["active_problem_info_id"])
             if new_next_level_for_db > current_progress_level_before_update:
@@ -232,15 +208,12 @@ def process_completed_problem(result_package, email_data):
         logging.error(f"Main: Misslyckades skicka svar för {email_data['graph_msg_id']} efter LLM.")
         return False
 
-def inform_level_error(email_data, student_level_idx, attempted_level_idx=None):
+def inform_level_error(email_data, student_level_idx, scenario, attempted_level_idx=None):
     """
     Inform the student about level access errors.
     """
-    # Determine Track
-    _, _, current_track_id = get_student_progress(email_data["sender_email"])
-    track_config = get_track_config(current_track_id)
-    start_phrases = track_config["start_phrases"]
-    num_levels = len(track_config["catalog"])
+    start_phrases = scenario.start_phrases
+    num_levels = len(scenario.problems)
 
     if attempted_level_idx is not None:
         msg_body = (f"Hej! Du försökte starta Nivå {attempted_level_idx + 1} (index {attempted_level_idx}), "
@@ -273,7 +246,7 @@ def inform_level_error(email_data, student_level_idx, attempted_level_idx=None):
             msg = f"Hej! Du har ingen aktiv konversation och ingen giltig startfras detekterades. För att starta nivå {student_level_idx + 1}, använd: \"{start_phrases[student_level_idx]}\"."
 
     if email_data.get("has_images"):
-        msg = ULLA_IMAGE_WARNING + "\n\n" + msg
+        msg = scenario.image_warning + "\n\n" + msg
 
     subj = f"Re: {email_data['subject']}" if email_data['subject'] and not email_data['subject'].lower().startswith("re:") else email_data['subject']
     if not subj: subj = "Angående nivåstart"
@@ -281,4 +254,5 @@ def inform_level_error(email_data, student_level_idx, attempted_level_idx=None):
     graph_send_email(email_data["sender_email"], subj, msg,
                      email_data["internet_message_id"],
                      email_data["references_header_value"],
-                     email_data["graph_conversation_id_incoming"])
+                     email_data["graph_conversation_id_incoming"],
+                     from_user_id=scenario.target_email)

@@ -4,9 +4,9 @@ import time
 import logging
 import base64
 import json
+import os
 from config import (
-    AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET, TARGET_USER_GRAPH_ID,
-    GRAPH_API_ENDPOINT, GRAPH_SCOPES, MSAL_AUTHORITY
+    GRAPH_API_ENDPOINT, GRAPH_SCOPES
 )
 
 # Global variables for MSAL and token
@@ -17,11 +17,24 @@ ACCESS_TOKEN = None
     
 def get_graph_token():
     global MSAL_APP, ACCESS_TOKEN
+    
+    # Dynamically fetch credentials (since they might be loaded per-scenario)
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    tenant_id = os.getenv("AZURE_TENANT_ID")
+    client_secret = os.getenv("AZURE_CLIENT_SECRET")
+    
+    if not all([client_id, tenant_id, client_secret]):
+        logging.error("Saknar Azure-legitimation (Client/Tenant/Secret) i environment.")
+        return None
+
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
+    
     if MSAL_APP is None: 
+        logging.info(f"Initializing with Entra authority: {authority}")
         MSAL_APP = msal.ConfidentialClientApplication(
-            AZURE_CLIENT_ID, 
-            authority=MSAL_AUTHORITY, 
-            client_credential=AZURE_CLIENT_SECRET
+            client_id, 
+            authority=authority, 
+            client_credential=client_secret
         )
     
     # MSAL automatically checks the cache first when you call this.
@@ -73,25 +86,29 @@ def make_graph_api_call(method, endpoint_or_url, data=None, params=None, headers
     except requests.exceptions.RequestException as e: logging.error(f"Graph anropsfel: {e} ({method} {url})", exc_info=True); return None
 
 # --- Graph API Email Functions ---
-def graph_send_email(recipient_email, subject, body_content, in_reply_to_message_id=None, references_header_str=None, conversation_id=None):
+def graph_send_email(recipient_email, subject, body_content, in_reply_to_message_id=None, references_header_str=None, conversation_id=None, from_user_id=None):
+    if not from_user_id:
+        logging.error("graph_send_email missing from_user_id")
+        return False
+        
     message_payload = {"message": {"subject": subject, "body": {"contentType": "Text", "content": body_content}, "toRecipients": [{"emailAddress": {"address": recipient_email}}]}, "saveToSentItems": "true"}
     headers_list = []
     if in_reply_to_message_id: headers_list.append({"name": "X-In-Reply-To", "value": in_reply_to_message_id})
     if references_header_str: headers_list.append({"name": "X-References", "value": references_header_str})
     if conversation_id: message_payload["message"]["conversationId"] = conversation_id
     if headers_list: message_payload["message"]["internetMessageHeaders"] = headers_list
-    endpoint = f"/users/{TARGET_USER_GRAPH_ID}/sendMail"
-    logging.info(f"Skickar e-post till: {recipient_email} | Ämne: {subject}")
+    endpoint = f"/users/{from_user_id}/sendMail"
+    logging.info(f"Skickar e-post till: {recipient_email} | Ämne: {subject} | Från: {from_user_id}")
     response = make_graph_api_call("POST", endpoint, data=message_payload)
     if response is True: logging.info("E-post skickat."); return True
     logging.error(f"Misslyckades skicka e-post. Svar: {response}"); return False
 
-def mark_email_as_read(graph_message_id):
-    endpoint = f"/users/{TARGET_USER_GRAPH_ID}/messages/{graph_message_id}"; payload = {"isRead": True}
+def mark_email_as_read(graph_message_id, user_id):
+    endpoint = f"/users/{user_id}/messages/{graph_message_id}"; payload = {"isRead": True}
     if make_graph_api_call("PATCH", endpoint, data=payload): logging.info(f"E-post {graph_message_id} markerad som läst.")
     else: logging.error(f"Misslyckades markera {graph_message_id} som läst.")
 
-def graph_delete_all_emails_in_inbox(user_principal_name_or_id=TARGET_USER_GRAPH_ID):
+def graph_delete_all_emails_in_inbox(user_principal_name_or_id):
     logging.info(f"Attempting to delete all emails in inbox for {user_principal_name_or_id}...")
     global ACCESS_TOKEN
     if ACCESS_TOKEN is None or jwt_is_expired(ACCESS_TOKEN):

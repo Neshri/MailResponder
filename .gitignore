@@ -1,5 +1,3 @@
-/.env
-/conversations.db
-/completed_conversations.db
-/debug_conversations.db
+.env
+*_conversations.db
 __pycache__

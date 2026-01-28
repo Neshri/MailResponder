@@ -4,12 +4,12 @@ try:
 except ImportError:
     ollama = None
 
-from config import PERSONA_MODEL, EVAL_MODEL, ollama_client_args
+from config import ollama_client_args
 
 _LLM_CLIENT_CACHE = None
 
 def init_llm_client():
-    """Initialize and test the Ollama connection by making a chat request (ONLY ONCE)."""
+    """Initialize and test the Ollama connection."""
     global _LLM_CLIENT_CACHE
     if _LLM_CLIENT_CACHE:
         return _LLM_CLIENT_CACHE
@@ -19,16 +19,13 @@ def init_llm_client():
         return None
 
     try:
-        # Test connection by making a chat request with the evaluator model
-        response = ollama.chat(
-            model=EVAL_MODEL,
-            messages=[{'role': 'user', 'content': 'Hello'}]
-        )
-        logging.info(f"Ollama connection tested successfully with model '{EVAL_MODEL}'")
+        # Test connection by listing models instead of depending on a specific one
+        ollama.list()
+        logging.info("Ollama connection established and verified.")
         _LLM_CLIENT_CACHE = ollama
         return ollama
     except Exception as e:
-        logging.error(f"Failed to test Ollama connection with model '{EVAL_MODEL}': {e}")
+        logging.error(f"Failed to connect to Ollama: {e}")
         return None
 
 def chat_with_model(model, messages, options=None, **kwargs):

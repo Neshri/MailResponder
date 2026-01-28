@@ -1,11 +1,11 @@
+import json
 import re
 import logging
 from config import EVAL_MODEL
 from prompts import EVALUATOR_SYSTEM_PROMPT
 from llm_client import chat_with_model
-from database import append_evaluator_response_to_debug
 
-def get_evaluator_decision(student_email, problem_description, solution_keywords, latest_student_message_cleaned, problem_id=None, system_prompt=None):
+def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, problem_id=None, system_prompt=None):
     """
     Uses LLM to evaluate if the student's message contains a correct solution.
     """
@@ -13,20 +13,25 @@ def get_evaluator_decision(student_email, problem_description, solution_keywords
         logging.error(f"Evaluator ({student_email}): EVAL_MODEL ej satt.")
         return "[EJ_LÖST]", ""
 
-    # The first item in keywords is a technical description of the problem
-    technical_problem_desc = solution_keywords[0]
-    actionable_solutions = solution_keywords[1:]
-
     logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{EVAL_MODEL}'.")
 
-    evaluator_prompt_content = f"""Ullas Problem: "{problem_description}"
-Teknisk problembeskrivning: "{technical_problem_desc}"
-Korrekta Lösningar/lösningsnyckelord: {actionable_solutions}
-Studentens SENASTE Meddelande:
+    # Serialize context for the LLM
+    context_str = json.dumps(evaluator_context, indent=2, ensure_ascii=False)
+
+    evaluator_prompt_content = f"""
+**SCENARIO & UTVÄRDERINGSKONTEXT:**
+{context_str}
+
+**Studentens SENASTE Meddelande:**
 ---
 {latest_student_message_cleaned}
 ---
-Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera studentens meddelande noggrant, generera först ett <think>-block med din fullständiga analys, och avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' på en ny rad.
+
+**Uppgift:**
+Följ ALLA regler och formatkrav från din system-prompt.
+Utvärdera studentens meddelande noggrant baserat på kontexten ovan.
+Generera först ett <think>-block med din fullständiga analys.
+Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på en ny rad.
 """
     
     # Fallback if not provided
@@ -53,10 +58,6 @@ Uppgift: Följ ALLA regler och formatkrav från din system-prompt. Utvärdera st
 
         if processed_eval_reply != raw_eval_reply_from_llm:
             logging.info(f"Evaluator ({student_email}): Removed <think> block. Original: '{raw_eval_reply_from_llm}', Processed: '{processed_eval_reply}'")
-
-        # Save evaluator response to debug database
-        if problem_id:
-            append_evaluator_response_to_debug(student_email, problem_id, raw_eval_reply_from_llm)
 
         # Extract the final decision or score from the LLM response
         lines = processed_eval_reply.strip().split('\n')

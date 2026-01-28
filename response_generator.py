@@ -49,60 +49,59 @@ def cap_history(full_history_string, max_turns=4):
     return f"[...tidigare konversation...]\n{capped_history}"
 
 
-def get_ulla_persona_reply(student_email, full_history_string_for_ulla, problem_info_for_ulla,
-                           latest_student_message_for_ulla, problem_level_idx_for_ulla, evaluator_decision_marker, 
-                           system_prompt=None):
+def get_persona_reply(student_email, full_history_string, persona_context,
+                        latest_student_message, problem_level_idx, evaluator_decision_marker, 
+                        system_prompt=None):
     """
-    Calls an LLM to generate Ulla's persona reply.
+    Calls an LLM to generate the Persona's reply.
     """
     if not PERSONA_MODEL:
         logging.error(f"Persona ({student_email}): PERSONA_MODEL ej satt.")
         return "Glömde vad jag skulle säga..."
 
-    logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx_for_ulla+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
+    logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
     system_prompt_content = system_prompt if system_prompt else ULLA_PERSONA_PROMPT
 
     if evaluator_decision_marker == "[LÖST]":
+        # SUCCESS STATE - Can also be generalized if needed, but keeping simple for now
+        description = persona_context.get('description', 'Problemet') # Fallback
         user_prompt_content = f"""
         **Din Berättelse (Kontext):**
         ---
-        {problem_info_for_ulla['beskrivning']}
+        {description}
         ---
         **Uppgift:** Studentens svar hjälpte dig att lösa problemet! 
         Du ser nu att allt fungerar som det ska (enligt beskrivningen i berättelsen).
-        Svara som Ulla och bekräfta glatt att problemet är borta. Tacka så mycket.
+        Svara i karaktär och bekräfta att problemet är borta.
         """
     else:
-        technical_facts_dict = problem_info_for_ulla.get('tekniska_fakta', {})
         student_name = get_name_from_email(student_email)
+        
+        # Serialize entire context
+        context_str = json.dumps(persona_context, indent=2, ensure_ascii=False)
 
         # Truncate the conversation history
-        capped_history_string = cap_history(full_history_string_for_ulla, max_turns=4)
+        capped_history_string = cap_history(full_history_string, max_turns=4)
 
-        # UPDATED PROMPT STRUCTURE
+        # UPDATED PROMPT STRUCTURE (Generic)
         user_prompt_content = f"""
         **Hittillsvarande Konversation:**
         {capped_history_string}
 
         **{student_name}s Senaste Meddelande till dig:**
-        {latest_student_message_for_ulla}
+        {latest_student_message}
 
         ---
         **DINA INSTRUKTIONER FÖR DETTA SVAR:**
 
-        **1. Din Nuvarande Situation (Detta har hänt):**
-        {problem_info_for_ulla['beskrivning']}
+        **1. DIN KONTEXT & VERKLIGHET:**
+        {context_str}
 
-        **2. TEKNISK VERKLIGHET (FACIT - Detta är vad som faktiskt visas på din skärm/dator):**
-        {json.dumps(technical_facts_dict, indent=2, ensure_ascii=False)}
-        *(OBS: Om studenten frågar om något tekniskt som INTE står här ovanför -> Säg att du inte vet. Hitta inte på tekniska fel.)*
-
-        **3. Din Uppgift:** 
-        Svara {student_name}.
-        - Om de ber dig kolla något: Titta i "TEKNISK VERKLIGHET" ovan. Om infon finns där, beskriv att du ser det på skärmen.
-        - Var inte för hjälpsam! Ge bara svar på exakt det de frågar om.
-        - Om de frågar vagt (t.ex. "Vad står det?"), spela lite förvirrad först eller ge bara en del av svaret.
+        **2. Din Uppgift:** 
+        Svara {student_name} baserat på din karaktär och kontexten ovan.
+        Referera endast till fakta som finns i din KONTEXT & VERKLIGHET.
+        Hitta inte på tekniska detaljer som inte står där.
         """
 
     messages_for_ulla = [

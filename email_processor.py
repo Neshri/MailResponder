@@ -1,16 +1,8 @@
-import time
 import logging
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config import TARGET_USER_GRAPH_ID
 from graph_api import make_graph_api_call, mark_email_as_read
-from database import (
-    get_student_progress, 
-    get_current_active_problem, 
-    set_student_track
-)
-from tracks import detect_track_trigger, get_track_config
 from email_parser import (
     parse_graph_email_item, 
     extract_student_message_from_reply, 
@@ -27,36 +19,33 @@ from conversation_manager import (
 # 1. ORCHESTRATOR
 # =========================================================================
 
-def graph_check_emails():
-    """Main Orchestrator: Fetches, Filters, Classifies, and Executes."""
+def graph_check_emails(scenario):
+    """Main Orchestrator: Fetches, Filters, Classifies, and Executes for a specific Scenario."""
     
     # Step 1: Fetch
-    unread_messages_raw = _fetch_raw_messages()
+    unread_messages_raw = _fetch_raw_messages(scenario.target_email)
     if not unread_messages_raw:
         return
 
-    logging.info(f"Hittade {len(unread_messages_raw)} olästa e-post. Startar bearbetning...")
+    logging.info(f"[{scenario.name}] Hittade {len(unread_messages_raw)} olästa e-post. Startar bearbetning...")
 
-    # Step 2: Group by User & Filter Noise (The Race Condition Fix)
+    # Step 2: Group by User & Filter Noise
     valid_processing_queue = []
-    user_batches = _group_by_user(unread_messages_raw)
+    user_batches = _group_by_user(unread_messages_raw, scenario.target_email)
     
     for sender_email, emails in user_batches.items():
-        valid_emails = _filter_batch_for_user(sender_email, emails)
+        valid_emails = _filter_batch_for_user(sender_email, emails, scenario)
         valid_processing_queue.extend(valid_emails)
 
     # Sort the clean queue chronologically
     valid_processing_queue.sort(key=lambda x: x['received_datetime'])
 
-    # Step 3: Processing Loop (Classify & Execute Sequentially)
-    # We process linearly so that a "Start Command" updates the DB immediately,
-    # allowing subsequent emails in the same batch to be treated as valid replies.
-    
+    # Step 3: Processing Loop
     llm_tasks = []
     
     for email_data in valid_processing_queue:
         # Classify the action based on CURRENT database state
-        task = _classify_email_action(email_data)
+        task = _classify_email_action(email_data, scenario)
         
         if task['type'] == 'llm':
             # Queue LLM tasks to run in parallel later
@@ -64,49 +53,42 @@ def graph_check_emails():
             
         elif task['type'] == 'start_command':
             # Execute Start Commands IMMEDIATELY to update DB state
-            if handle_start_new_problem_main_thread(task['data'], task['level_idx']):
-                mark_email_as_read(task['data']["graph_msg_id"])
-        
-        elif task['type'] == 'track_switch':
-            # Handle Track Switch + Start Command
-            if set_student_track(task['data']["sender_email"], task['track_id']):
-                # After switching track, start the first problem (Level 0)
-                if handle_start_new_problem_main_thread(task['data'], 0):
-                    mark_email_as_read(task['data']["graph_msg_id"])
+            if handle_start_new_problem_main_thread(task['data'], task['level_idx'], scenario):
+                mark_email_as_read(task['data']["graph_msg_id"], scenario.target_email)
                 
         elif task['type'] == 'info_error':
             # Execute errors immediately
-            inform_level_error(task['data'], task['level_idx'])
-            mark_email_as_read(task['data']["graph_msg_id"])
+            inform_level_error(task['data'], task['level_idx'], scenario)
+            mark_email_as_read(task['data']["graph_msg_id"], scenario.target_email)
             
         elif task['type'] == 'ignore':
             # Just mark as read (logging handled in classify)
-            mark_email_as_read(task['data']["graph_msg_id"])
+            mark_email_as_read(task['data']["graph_msg_id"], scenario.target_email)
 
     # Step 4: Execute gathered LLM tasks
-    _execute_llm_tasks(llm_tasks)
+    _execute_llm_tasks(llm_tasks, scenario)
     
-    logging.info(f"Cykel klar. {len(valid_processing_queue)} meddelanden behandlades.")
+    logging.info(f"[{scenario.name}] Cykel klar. {len(valid_processing_queue)} meddelanden behandlades.")
 
 
 # =========================================================================
 # 2. HELPER FUNCTIONS
 # =========================================================================
 
-def _fetch_raw_messages():
+def _fetch_raw_messages(target_email_id):
     """Fetching logic only."""
     select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders,attachments"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
-    endpoint = f"/users/{TARGET_USER_GRAPH_ID}/mailFolders/inbox/messages"
+    endpoint = f"/users/{target_email_id}/mailFolders/inbox/messages"
     
-    logging.info("Söker olästa e-post (Graph)...")
+    logging.debug(f"Söker olästa e-post för {target_email_id}...")
     response_data = make_graph_api_call("GET", endpoint, params=params)
     
     if response_data and "value" in response_data:
         return response_data["value"]
     return None
 
-def _group_by_user(raw_messages):
+def _group_by_user(raw_messages, target_email_id):
     """Parses JSON and groups into a dict: { 'user@email.com': [email1, email2] }"""
     batches = defaultdict(list)
     for item in raw_messages:
@@ -114,16 +96,16 @@ def _group_by_user(raw_messages):
         
         # Immediate System Filter
         if not email_data["sender_email"] or \
-           email_data["sender_email"] == TARGET_USER_GRAPH_ID.lower() or \
+           email_data["sender_email"] == target_email_id.lower() or \
            'mailer-daemon' in email_data["sender_email"] or \
            'noreply' in email_data["sender_email"]:
-            mark_email_as_read(email_data["graph_msg_id"])
+            mark_email_as_read(email_data["graph_msg_id"], target_email_id)
             continue
             
         batches[email_data["sender_email"]].append(email_data)
     return batches
 
-def _filter_batch_for_user(sender_email, emails):
+def _filter_batch_for_user(sender_email, emails, scenario):
     """
     Event Coalescing Logic:
     If a valid 'Start Command' is found, discard all emails received BEFORE it.
@@ -131,54 +113,33 @@ def _filter_batch_for_user(sender_email, emails):
     # 1. Sort chronological
     emails.sort(key=lambda x: x['received_datetime'])
     
-    # 2. Get User State (CRITICAL: Do not filter based on Subject if user is Active)
-    _, active_problem_info, _, _, _ = get_current_active_problem(sender_email)
+    # 2. Get User State
+    # Note: get_current_active_problem requires a callback to resolve problem details
+    # We define a simple lambda/wrapper for it.
+    def problem_resolver(pid, tid):
+        return scenario.get_problem_by_id(pid)
+
+    _, active_problem_info, _, _, _ = scenario.db_manager.get_current_active_problem(sender_email, problem_resolver)
     
     last_start_index = -1
+    start_phrases = scenario.start_phrases
     
-    # 3. Scan for the LATEST Reset Command (Track or Level)
+    # 3. Scan for the LATEST Reset Command
     for i, email in enumerate(emails):
         is_reset = False
         body_clean = email["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ")
         
-        # Check Track Trigger (Prioritized)
-        track_id, _ = detect_track_trigger(body_clean)
-        if track_id:
+        # Check Body (Always a valid reset)
+        if any(body_clean.startswith(p.lower()) for p in start_phrases):
              is_reset = True
-        
-        # Check Level Start (Existing logic) - We need to know THE USER'S TRACK to check valid phases
-        # But for filtering, we can check ALL tracks? Or just current? 
-        # Ideally just current.
-        if not is_reset:
-            # We don't have easy access to start phrases here without knowing the track... 
-            # But the user state is checked via `active_problem_info`.
-            # Let's import GLOBAL Start phrases as a fallback for now, OR fetch config.
-            # But wait, `_classify_email_action` does the heavy lifting. logic here is mostly heuristic.
-            # IF we assume standard phrases are unique enough...
-            # For Safety: If we don't check track triggers properly here, we might miss a reset.
-            # But we added track trigger check above.
-            pass
-
-        # ... (Rest of existing logic for START_PHRASES is less robust if phrases differ by track)
-        # However, typically "start phrases" are specific. 
-        # Let's keep existing logic but acknowledge it uses GLOBAL phrases (from problem_catalog).
-        # We should probably update `START_PHRASES` usage here too?
-        # TODO: Refactor filter to be track-aware if phrases diverge significantly.
-        # For now, `problem_catalog.START_PHRASES` is Ulla's.
-        
-        if not is_reset:
-             from problem_catalog import START_PHRASES as ULLA_PHRASES # Or use tracks
-             # Check Body (Always a valid reset)
-             if any(body_clean.startswith(p.lower()) for p in ULLA_PHRASES):
-                is_reset = True
-             # Check Subject
-             elif email["subject"]:
-                has_phrase = any(p.lower() in email["subject"].lower() for p in ULLA_PHRASES)
-                if has_phrase:
-                    if not active_problem_info:
-                        is_reset = True
-                    else:
-                        logging.debug(f"Filter: Ignoring Subject-based Start from {sender_email} (User is Active).")
+        # Check Subject
+        elif email["subject"]:
+             has_phrase = any(p.lower() in email["subject"].lower() for p in start_phrases)
+             if has_phrase:
+                 if not active_problem_info:
+                     is_reset = True
+                 else:
+                     logging.debug(f"Filter: Ignoring Subject-based Start from {sender_email} (User is Active).")
 
         if is_reset:
             last_start_index = i
@@ -191,48 +152,33 @@ def _filter_batch_for_user(sender_email, emails):
         if start_processing_at > 0:
             logging.warning(f"Filter: Dropping {start_processing_at} obsolete emails from {sender_email}.")
             for k in range(0, start_processing_at):
-                mark_email_as_read(emails[k]["graph_msg_id"])
+                mark_email_as_read(emails[k]["graph_msg_id"], scenario.target_email)
 
     return emails[start_processing_at:]
 
-def _classify_email_action(email_data):
+def _classify_email_action(email_data, scenario):
     """Decides WHAT to do with a single valid email."""
     sender = email_data["sender_email"]
     
-    # Fetch fresh DB state including Track
-    student_next_level_idx, _, current_track_id = get_student_progress(sender)
-    active_hist_str, active_problem_info, active_problem_level_idx, active_convo_id, track_metadata = get_current_active_problem(sender)
+    # Fetch fresh DB state
+    student_next_level_idx, _, _ = scenario.db_manager.get_student_progress(sender)
     
-    # Load Configuration
-    track_config = get_track_config(current_track_id)
-    track_start_phrases = track_config["start_phrases"]
-    num_levels = len(track_config["catalog"])
+    def problem_resolver(pid, tid):
+        return scenario.get_problem_by_id(pid)
+    
+    active_hist_str, active_problem_info, active_problem_level_idx, active_convo_id, track_metadata = scenario.db_manager.get_current_active_problem(sender, problem_resolver)
+    
+    start_phrases = scenario.start_phrases
+    num_levels = len(scenario.problems)
     
     body_clean = email_data["cleaned_body"].lower().strip().strip("\"").strip("'").strip(" ")
 
-    # --- 1. Check Track Switch ---
-    new_track_id, _ = detect_track_trigger(body_clean)
-    if new_track_id and new_track_id != current_track_id:
-        return {
-            'type': 'track_switch',
-            'track_id': new_track_id,
-            'data': email_data
-        }
-    # Also valid if same track but explicit trigger (Reset)
-    if new_track_id and new_track_id == current_track_id:
-        # Treat as a reset to Level 0
-        return {
-            'type': 'track_switch',
-            'track_id': new_track_id, # Same ID, triggers reset logic in orchestrator
-            'data': email_data
-        }
-
-    # --- 2. Check for Level Start Command (Within current track) ---
+    # --- Check for Leval Start Command ---
     detected_level = -1
     is_explicit = False
     
     # Body Check
-    for idx, phrase in enumerate(track_start_phrases):
+    for idx, phrase in enumerate(start_phrases):
         if idx >= num_levels: break
         if body_clean.startswith(phrase.lower()):
             detected_level = idx
@@ -241,7 +187,7 @@ def _classify_email_action(email_data):
             
     # Subject Check (Safe logic)
     if not is_explicit and not active_problem_info and email_data["subject"]:
-        for idx, phrase in enumerate(track_start_phrases):
+        for idx, phrase in enumerate(start_phrases):
             if idx >= num_levels: break
             if phrase.lower() in email_data["subject"].lower():
                 detected_level = idx
@@ -284,7 +230,6 @@ def _classify_email_action(email_data):
             'level_idx': active_problem_level_idx,
             'convo_id': active_convo_id,
             'db_entry': db_entry,
-            'track_id': current_track_id, # Pass track ID
             'track_metadata': track_metadata
         }
 
@@ -295,7 +240,7 @@ def _classify_email_action(email_data):
         'level_idx': student_next_level_idx
     }
 
-def _execute_llm_tasks(tasks):
+def _execute_llm_tasks(tasks, scenario):
     """Submits to ThreadPool and handles results."""
     if not tasks: return
 
@@ -314,8 +259,8 @@ def _execute_llm_tasks(tasks):
                 t['email_data'],
                 t['db_entry'],
                 t['problem_info']['id'],
-                t['track_id'], # Pass track ID
-                t['track_metadata']
+                scenario=scenario, # Pass scenario
+                track_metadata=t['track_metadata']
             ): t for t in tasks
         }
         
@@ -332,10 +277,10 @@ def _execute_llm_tasks(tasks):
                     continue 
                     
                 if res.get("send_reply"):
-                    if process_completed_problem(res, email_data):
-                        mark_email_as_read(email_data["graph_msg_id"])
+                    if process_completed_problem(res, email_data, scenario):
+                        mark_email_as_read(email_data["graph_msg_id"], scenario.target_email)
                 elif res.get("mark_as_read"):
-                    mark_email_as_read(email_data["graph_msg_id"])
+                    mark_email_as_read(email_data["graph_msg_id"], scenario.target_email)
                     
             except Exception as e:
                 logging.error(f"Thread execution failed: {e}", exc_info=True)

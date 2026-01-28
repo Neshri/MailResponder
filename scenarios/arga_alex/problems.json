@@ -1,0 +1,35 @@
+{
+    "start_phrases": [
+        "starta deeskalering",
+        "börja deeskalering"
+    ],
+    "catalog": [
+        [
+            {
+                "id": "E1_P001",
+                "start_prompt": "HÖRRO DU! Jag har väntat i TIO MINUTER på att min mail ska fungera! Det är ERT fel! Fixa det NU eller så ringer jag chefen!",
+                "persona_context": {
+                    "description": "Kunden är rasande över 'trasig mail'.",
+                    "reality": {
+                        "felkod": "INGEN (Användaren har inte loggat in)",
+                        "skärm": "Svart",
+                        "sladd": "Utdragen"
+                    },
+                    "anger_triggers": [
+                        "Tekniska frågor innan empati",
+                        "Att bli ombedd att lugna ner sig"
+                    ]
+                },
+                "evaluator_context": {
+                    "scenario_goal": "De-eskalera ilskan.",
+                    "scoring_guide": {
+                        "PERFECT (-30)": "Total ansvarsacceptans + Ingen teknisk fråga.",
+                        "GOOD (-10)": "Empatisk men lite formell.",
+                        "BAD (+10)": "Standardfraser ('Jag förstår').",
+                        "FAIL (+20)": "Defensivitet eller teknisk felsökning direkt."
+                    }
+                }
+            }
+        ]
+    ]
+}
