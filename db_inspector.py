@@ -213,7 +213,7 @@ def print_full_debug_history(db_paths, email_filter=None, search_term=None):
             if eval_responses:
                 print("\n    [LATEST EVALUATOR LOGS]")
                 for item in eval_responses[-3:]: # Show last 3
-                    print(f"    -- {item.get('timestamp')}: {str(item.get('response'))[:100]}...")
+                    print(f"    -- {item.get('timestamp')}: {item.get('response')}")
 
             print("    " + ("-"*48))
 
