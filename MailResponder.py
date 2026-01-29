@@ -7,13 +7,14 @@ from email_processor import graph_check_emails
 from graph_api import get_graph_token, jwt_is_expired
 from scenario_manager import ScenarioManager
 
+import argparse
+from graph_api import get_graph_token, jwt_is_expired, graph_delete_all_emails_in_inbox
+
 if __name__ == "__main__":
     logging.info(f"Script startat.")
 
-    # --- CLI Argument Handling (Temporarily Disabled/Modified) ---
     if len(sys.argv) > 1:
-        logging.warning("CLI arguments are currently disabled during refactoring.")
-        # TODO: Refactor CLI tools to work with specific scenarios
+        logging.warning(f"Argument detekterade: {sys.argv[1:]}. Dessa ignoreras i e-postläge.")
         
     logging.info("--- Kör i E-post Bot-läge (Graph API) ---")
         
@@ -23,21 +24,22 @@ if __name__ == "__main__":
         logging.critical("Failed to initialize Ollama connection")
         exit("FEL: Ollama-anslutning.")
 
-    # Initialize Scenario Manager FIRST to load .env variables from scenarios
+    # Initialize Scenario Manager
     scenario_manager = ScenarioManager()
     scenario_manager.load_scenarios()
     
     if not scenario_manager.scenarios:
-        logging.critical("Inga scenarier hittades. Avslutar.")
+        logging.critical("Inga aktiva scenarier hittades. Avslutar.")
         exit(1)
 
-    # Initial token fetch (Now that env vars might be loaded)
+    # Initial token fetch
     if not get_graph_token():
-        logging.critical("Misslyckades hämta Graph API-token. Kontrollera att minst ett scenario har giltiga Azure-uppgifter i sin config/.env.")
+        logging.critical("Misslyckades hämta Graph Token. Kontrollera Azure-legitimation.")
         exit(1)
 
     logging.info(f"Startar huvudloop för {len(scenario_manager.scenarios)} scenarier...")
     
+
     while True:
         try:
             # Token Refresh Check

@@ -125,9 +125,11 @@ def print_db_content(db_paths, email_filter=None):
     print(f"\n{'='*60}\n")
 
 
-def print_full_debug_history(db_paths, email_filter=None):
+def print_full_debug_history(db_paths, email_filter=None, search_term=None):
     print(f"\n{'!'*60}")
     print(f"       FULL DEBUG HISTORY INSPECTION")
+    if search_term:
+        print(f"SEARCH KEYWORD: '{search_term}'")
     print(f"{'!'*60}")
     
     conn = _get_inspector_conn(db_paths['debug'])
@@ -137,9 +139,19 @@ def print_full_debug_history(db_paths, email_filter=None):
         cursor = conn.cursor()
         query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
         params = []
+        
+        conditions = []
         if email_filter:
-            query = "SELECT * FROM debug_conversations WHERE student_email = ? ORDER BY last_updated DESC"
+            conditions.append("student_email = ?")
             params.append(email_filter)
+        
+        if search_term:
+            # Search both in email (if not already filtered) and history content
+            conditions.append("(student_email LIKE ? OR full_conversation_history LIKE ?)")
+            params.extend([f"%{search_term}%", f"%{search_term}%"])
+        
+        if conditions:
+            query = f"SELECT * FROM debug_conversations WHERE {' AND '.join(conditions)} ORDER BY last_updated DESC"
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
@@ -181,6 +193,7 @@ def main():
     parser = argparse.ArgumentParser(description="Inspect MailResponder Database")
     parser.add_argument("--scenario", "-s", help="Name of the scenario to inspect (e.g. 'Ulla Support')")
     parser.add_argument("--email", "-e", help="Filter results by student email")
+    parser.add_argument("--search", "-f", help="Search for keyword in conversation history")
     parser.add_argument("--debug", "-d", action="store_true", help="Print full debug history")
     parser.add_argument("--list", "-l", action="store_true", help="List available scenarios and exit")
 
@@ -199,41 +212,48 @@ def main():
     if args.list:
         print("Available Scenarios:")
         for s in scenarios:
-            print(f" - '{s.name}' (Prefix: {s.db_prefix}, Email: {s.target_email})")
+            # Safely get db_prefix if we can, otherwise just show info 
+            # Note: Scenario object doesn't have db_prefix, but db_manager has db_file
+            db_name = os.path.basename(s.db_manager.db_file)
+            print(f" - '{s.name}' (DB: {db_name}, Email: {s.target_email})")
         return
 
-    # Select Scenario
-    target_scenario = None
+    # Select Scenario(s)
+    scenarios_to_inspect = []
     if args.scenario:
         # Case-insensitive partial match
         for s in scenarios:
             if args.scenario.lower() in s.name.lower():
-                target_scenario = s
-                break
-        if not target_scenario:
+                scenarios_to_inspect.append(s)
+        if not scenarios_to_inspect:
             print(f"[!] Scenario matching '{args.scenario}' not found.")
             print("Available: " + ", ".join([f"'{s.name}'" for s in scenarios]))
             return
     else:
-        # Default to the first one active if not specified
-        target_scenario = scenarios[0]
-        print(f"[i] No scenario specified. Defaulting to: '{target_scenario.name}'")
+        # Default to all if search or email filter is used, otherwise maybe just the first one?
+        # User wants to search across the system, so default to all scenarios.
+        scenarios_to_inspect = scenarios
+        if not args.search and not args.email:
+             print(f"[i] No scenario specified. Inspecting all {len(scenarios)} scenarios...")
+             print(f"    (Use -s <name> for specific scenario)")
 
-    # Resolve DB Paths using the scenario's DB Manager
-    # We reconstruct paths manually because db_manager might be initialized relative to CWD
-    # but let's try to trust the manager's attributes.
-    
-    # Access private attributes is risky but db_manager logic is simple
-    db_paths = {
-        "main": target_scenario.db_manager.db_file,
-        "completed": target_scenario.db_manager.completed_db_file,
-        "debug": target_scenario.db_manager.debug_db_file
-    }
+    for target_scenario in scenarios_to_inspect:
+        if len(scenarios_to_inspect) > 1:
+            print(f"\n{'#'*60}")
+            print(f"### SCENARIO: {target_scenario.name}")
+            print(f"{'#'*60}")
 
-    print_db_content(db_paths, email_filter=args.email)
+        # Resolve DB Paths using the scenario's DB Manager
+        db_paths = {
+            "main": target_scenario.db_manager.db_file,
+            "completed": target_scenario.db_manager.completed_db_file,
+            "debug": target_scenario.db_manager.debug_db_file
+        }
 
-    if args.debug:
-        print_full_debug_history(db_paths, email_filter=args.email)
+        print_db_content(db_paths, email_filter=args.email)
+
+        if args.debug or args.search:
+            print_full_debug_history(db_paths, email_filter=args.email, search_term=args.search)
 
 if __name__ == "__main__":
     main()
