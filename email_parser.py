@@ -124,16 +124,20 @@ def parse_graph_email_item(msg_graph_item):
         
     email_data["cleaned_body"] = clean_email_body(raw_body, TARGET_USER_GRAPH_ID)
 
-    # Detect images
-    has_images = False
-    attachments = msg_graph_item.get('attachments', [])
-    for att in attachments:
-        if att.get('contentType', '').startswith('image/'):
-            has_images = True
-            break
+    # Detect images (including inline and attachments)
+    has_images = msg_graph_item.get('hasAttachments', False)
+    
+    if not has_images:
+        attachments = msg_graph_item.get('attachments', [])
+        for att in attachments:
+            if att.get('contentType', '').startswith('image/'):
+                has_images = True
+                break
+                
     if not has_images and body_obj.get('contentType','').lower()=='html' and BeautifulSoup:
         soup = BeautifulSoup(body_content, "html.parser")
-        if soup.find('img'):
+        # Check for <img> tags or cid: references which indicate inline images
+        if soup.find('img') or 'src="cid:' in body_content:
             has_images = True
     email_data["has_images"] = has_images
 

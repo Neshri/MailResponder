@@ -77,7 +77,7 @@ def graph_check_emails(scenario):
 
 def _fetch_raw_messages(target_email_id):
     """Fetching logic only."""
-    select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders,attachments"
+    select_fields = "id,subject,from,sender,receivedDateTime,bodyPreview,body,internetMessageId,conversationId,isRead,internetMessageHeaders,attachments,hasAttachments"
     params = {"$filter": "isRead eq false", "$select": select_fields, "$orderby": "receivedDateTime asc"}
     endpoint = f"/users/{target_email_id}/mailFolders/inbox/messages"
     

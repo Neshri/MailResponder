@@ -165,6 +165,9 @@ def process_completed_problem(result_package, email_data, scenario):
             completion_msg += "\nDu har klarat alla nivåer! Grattis!"
         result_package["ulla_final_reply_body"] += completion_msg
 
+    if email_data.get("has_images") and scenario.image_warning:
+        result_package["ulla_final_reply_body"] = scenario.image_warning + "\n\n" + result_package["ulla_final_reply_body"]
+
     ulla_db_entry = f"Ulla: {result_package['ulla_final_reply_body']}\n\n"
 
     reply_s = result_package["reply_subject"]
