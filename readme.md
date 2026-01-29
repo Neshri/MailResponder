@@ -14,18 +14,17 @@ The system is built to help IT support students practice their diagnostic, commu
     - **Conversation Archiving:** Completed conversations saved to separate archive database
     - **Debug Database:** Full AI conversation histories with evaluator responses for analysis
 -   **Advanced Email Processing:**
-    - Intelligent reply detection and conversation threading
-    - Email content cleaning and HTML parsing
-    - Race condition prevention with parallel processing
+    - Intelligent reply detection and conversation threading.
+    - Email content cleaning and HTML parsing.
+    - **Image Detection:** Automatically detects attachments and inline/copy-pasted images.
+    - **Image Warnings:** Prepends a configurable accessibility warning to Ulla's replies if images are detected.
 -   **Dual-LLM Architecture:**
-    -   **Evaluator AI:** Strict logical model that determines if solutions correctly solve problems
-    -   **Persona AI:** Creative model simulating Ulla's conversational responses
+    -   **Evaluator AI:** Strict logical model that determines if solutions correctly solve problems.
+    -   **Persona AI:** Creative model simulating Ulla's conversational responses, now including awareness of images she cannot see.
 -   **Multi-User Support:** Handles multiple students simultaneously with conversation persistence.
 -   **Race Condition Prevention:** Advanced concurrency management for reliable email processing.
--   **Conversation Management:** Intelligent reply detection and conversation state management.
--   **Analysis Tools:** Comprehensive debugging and conversation analysis capabilities.
--   **Highly Configurable:** Problems, personas, and difficulty levels easily customizable in `prompts.py`.
--   **Utility Commands:** CLI flags for database inspection, debugging, and inbox management.
+-   **Analysis Tools:** Comprehensive debugging and conversation analysis via the `db_inspector.py` utility.
+-   **Highly Configurable:** Problems, personas, and difficulty levels customizable per scenario.
 -   **Test Suite:** Built-in testing utilities for system validation and troubleshooting.
 
 ## How It Works
@@ -175,57 +174,60 @@ python MailResponder.py &
 
 ### Utility Commands
 
--   **Print Database Contents:**
-    Prints the contents of both the active and completed databases. You can optionally provide a student's email address to filter the output for just that user.
+-   **Database Inspector (`db_inspector.py`):**
+    The primary tool for monitoring student progress and analyzing AI behavior across all scenarios.
+    
     ```bash
-    # Print all data from all databases
-    python MailResponder.py --printdb
-
-    # Print data only for a specific student
-    python MailResponder.py --printdb student@example.com
+    # Show summary of all scenarios and progress
+    python db_inspector.py
+    
+    # Filter by specific student email
+    python db_inspector.py -e student@example.com
+    
+    # Inspect full debug history (including raw AI thought blocks)
+    python db_inspector.py --debug
+    
+    # Search for keywords in conversation histories
+    python db_inspector.py --search "hårddisk"
+    
+    # List all loaded scenarios and their database paths
+    python db_inspector.py --list
     ```
 
--   **Print Debug Database:**
-    Prints the contents of the debug database including full evaluator AI responses. Useful for debugging evaluator behavior and analyzing conversation patterns.
+-   **Ollama Connectivity Check:**
+    You can verify the connection to your Ollama instance and models by running:
     ```bash
-    # Print all debug data
-    python MailResponder.py --printdebugdb
-
-    # Print debug data for a specific student
-    python MailResponder.py --printdebugdb student@example.com
-
-    # Print debug data for a specific problem
-    python MailResponder.py --printdebugdb "" L1_P001
-    ```
-
--   **Empty the Inbox:** Deletes **ALL** emails from the bot's inbox. Use with caution.
-    ```bash
-    python MailResponder.py --emptyinbox
+    python llm_client.py
     ```
 
 ## Project Structure
 
 ```
 .
-├── MailResponder.py          # Main application entry point and CLI interface
+├── MailResponder.py          # Main application entry point (background loop)
+├── db_inspector.py           # CLI tool for database analysis and debugging
 ├── config.py                 # Configuration management for environment variables
 ├── database.py               # SQLite database operations and schema management
-├── email_parser.py           # Advanced email parsing and reply detection
+├── email_parser.py           # Advanced email parsing, reply detection, and image detection
 ├── email_processor.py        # Main orchestration logic and email processing
 ├── response_generator.py     # AI-powered response generation with persona simulation
 ├── evaluator.py              # Problem evaluation and solution verification
 ├── conversation_manager.py   # Conversation flow and state management
+├── scenario_manager.py       # Manages multiple scenarios and their configurations
 ├── graph_api.py              # Microsoft Graph API integration for email
 ├── llm_client.py             # LLM API client for Ollama integration
-├── problem_catalog.py        # Problem catalogue management and validation
-├── prompts.py                # LLM system prompts and problem definitions
-├── test.py                   # Testing utilities and validation
+├── prompts.py                # Global fallback LLM system prompts
+├── scenarios/                # Directory containing specific training scenarios
+│   └── ulla_support/         # Example: Classic Ulla Tech Support scenario
+│       ├── config.json       # Scenario-specific DB prefix, email, etc.
+│       ├── problems.json     # The problem catalog and start phrases for this scenario
+│       └── ulla_conversations.db # Databases are stored per-scenario
+├── requirements.txt          # Python dependencies list
 ├── conversations.db          # SQLite database for tracking student progress
 ├── completed_conversations.db  # Archive database for completed conversations
 ├── debug_conversations.db    # Debug database with full AI responses
 ├── example.env               # Environment configuration template
 ├── .env                      # Holds all secrets and configuration (git-ignored)
-└── requirements.txt          # Python dependencies list
 ```
 
 ## Configuration and Extension
