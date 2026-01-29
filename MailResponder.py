@@ -39,7 +39,6 @@ if __name__ == "__main__":
 
     logging.info(f"Startar huvudloop för {len(scenario_manager.scenarios)} scenarier...")
     
-
     while True:
         try:
             # Token Refresh Check
