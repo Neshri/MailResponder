@@ -51,7 +51,7 @@ def cap_history(full_history_string, max_turns=4):
 
 def get_persona_reply(student_email, full_history_string, persona_context,
                         latest_student_message, problem_level_idx, evaluator_decision_marker, 
-                        system_prompt=None):
+                        system_prompt=None, has_images=False):
     """
     Calls an LLM to generate the Persona's reply.
     """
@@ -75,6 +75,8 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         Du ser nu att allt fungerar som det ska (enligt beskrivningen i berättelsen).
         Svara i karaktär och bekräfta att problemet är borta.
         """
+        if has_images:
+             user_prompt_content += "\n\n(OBS: Studenten skickade med en bild som du inte kan se. Nämn detta kort i din karaktär.)"
     else:
         student_name = get_name_from_email(student_email)
         
@@ -103,6 +105,8 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         Referera endast till fakta som finns i din KONTEXT & VERKLIGHET.
         Hitta inte på tekniska detaljer som inte står där.
         """
+        if has_images:
+             user_prompt_content += "\n\n(OBS: Studenten skickade med en bild som du inte kan se. Nämn detta kort i din karaktär.)"
 
     messages_for_ulla = [
         {'role': 'system', 'content': system_prompt_content},

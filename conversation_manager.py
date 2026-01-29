@@ -106,7 +106,8 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         latest_student_message_cleaned,
         problem_level_idx_for_prompt,
         evaluator_marker,
-        system_prompt=scenario.persona_prompt
+        system_prompt=scenario.persona_prompt,
+        has_images=email_data_for_result.get("has_images", False)
     )
 
     result_package = {
