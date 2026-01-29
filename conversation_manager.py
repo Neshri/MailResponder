@@ -82,6 +82,9 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         system_prompt=scenario.evaluator_prompt
     )
     
+    # Store the raw evaluator response in the debug log
+    scenario.db_manager.add_debug_evaluator_response(student_email, problem_info_id, evaluator_raw_response)
+    
     # TODO: Add specific "Evil Persona" logic here if needed, checking scenario.name or type
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 

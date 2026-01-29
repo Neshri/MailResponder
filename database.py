@@ -279,6 +279,35 @@ class DatabaseManager:
         except sqlite3.Error:
             return False
 
+    def add_debug_evaluator_response(self, student_email, problem_id, evaluator_response):
+        """Append a new evaluator response to the JSON list in debug_conversations."""
+        try:
+            with self.get_connection(self.debug_db_file) as conn:
+                cursor = conn.execute(
+                    "SELECT evaluator_responses FROM debug_conversations WHERE student_email = ? AND problem_id = ?",
+                    (student_email, problem_id)
+                )
+                row = cursor.fetchone()
+                if row:
+                    try:
+                        responses = json.loads(row['evaluator_responses'])
+                    except (ValueError, TypeError):
+                        responses = []
+                    
+                    responses.append({
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "response": evaluator_response
+                    })
+                    
+                    conn.execute(
+                        "UPDATE debug_conversations SET evaluator_responses = ?, last_updated = CURRENT_TIMESTAMP WHERE student_email = ? AND problem_id = ?",
+                        (json.dumps(responses), student_email, problem_id)
+                    )
+                    conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
     def is_email_processed(self, message_id: str) -> bool:
         try:
             with self.get_connection(self.db_file) as conn:
