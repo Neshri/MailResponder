@@ -121,7 +121,7 @@ def print_db_content(db_paths, email_filter=None, search_term=None):
                 
                 if conditions:
                     query += " WHERE " + " OR ".join(conditions)
-                query += " ORDER BY completed_at DESC"
+                query += " ORDER BY completed_at ASC"
                 
                 cursor.execute(query, params)
                 rows = cursor.fetchall()
@@ -171,7 +171,7 @@ def print_full_debug_history(db_paths, email_filter=None, search_term=None):
 
     try:
         cursor = conn.cursor()
-        query = "SELECT * FROM debug_conversations ORDER BY last_updated DESC"
+        query = "SELECT * FROM debug_conversations ORDER BY last_updated ASC"
         params = []
         
         conditions = []
@@ -185,7 +185,7 @@ def print_full_debug_history(db_paths, email_filter=None, search_term=None):
             params.extend([f"%{search_term}%", f"%{search_term}%"])
         
         if conditions:
-            query = f"SELECT * FROM debug_conversations WHERE {' AND '.join(conditions)} ORDER BY last_updated DESC"
+            query = f"SELECT * FROM debug_conversations WHERE {' AND '.join(conditions)} ORDER BY last_updated ASC"
         
         cursor.execute(query, params)
         rows = cursor.fetchall()
