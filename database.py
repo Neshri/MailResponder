@@ -21,7 +21,9 @@ class DatabaseManager:
         conn.row_factory = sqlite3.Row
         try:
             yield conn
+            conn.commit()
         except sqlite3.Error as e:
+            conn.rollback()
             logging.error(f"Database error in '{db_path}': {e}", exc_info=True)
             raise
         finally:
@@ -59,6 +61,10 @@ class DatabaseManager:
                 track_metadata TEXT DEFAULT '{}',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(student_email) REFERENCES student_progress(student_email)
+            );''',
+            '''CREATE TABLE IF NOT EXISTS processed_emails (
+                message_id TEXT PRIMARY KEY,
+                processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );'''
         ]
         self._init_sql(self.db_file, stmts, "Main")
@@ -269,6 +275,22 @@ class DatabaseManager:
                         VALUES (?, ?, ?, ?, ?)
                     ''', (student_email, problem_id, problem_level_index, history_string, evaluator_responses))
                 conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+    def is_email_processed(self, message_id: str) -> bool:
+        try:
+            with self.get_connection(self.db_file) as conn:
+                cursor = conn.execute("SELECT 1 FROM processed_emails WHERE message_id = ?", (message_id,))
+                return cursor.fetchone() is not None
+        except sqlite3.Error:
+            return False
+
+    def mark_email_as_processed(self, message_id: str):
+        try:
+            with self.get_connection(self.db_file) as conn:
+                conn.execute("INSERT OR IGNORE INTO processed_emails (message_id) VALUES (?)", (message_id,))
             return True
         except sqlite3.Error:
             return False

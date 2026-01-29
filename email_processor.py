@@ -113,6 +113,15 @@ def _filter_batch_for_user(sender_email, emails, scenario):
     # 1. Sort chronological
     emails.sort(key=lambda x: x['received_datetime'])
     
+    # 1.5 Filter out already processed emails (Idempotency)
+    original_count = len(emails)
+    emails = [e for e in emails if not scenario.db_manager.is_email_processed(e["graph_msg_id"])]
+    if len(emails) < original_count:
+        logging.info(f"Filter: Dropped {original_count - len(emails)} already processed emails from {sender_email}.")
+
+    if not emails:
+        return []
+    
     # 2. Get User State
     # Note: get_current_active_problem requires a callback to resolve problem details
     # We define a simple lambda/wrapper for it.

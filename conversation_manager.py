@@ -38,6 +38,7 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
             reply_body = scenario.image_warning + "\n\n" + reply_body
         
         if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"], from_user_id=scenario.target_email):
+            scenario.db_manager.mark_email_as_processed(email_data["graph_msg_id"])
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']} [Scenario: {scenario.name}]")
             return True
         else:
@@ -171,6 +172,7 @@ def process_completed_problem(result_package, email_data, scenario):
                         result_package["references_for_send"],
                         result_package["convo_id_for_send"],
                         from_user_id=scenario.target_email):
+        scenario.db_manager.mark_email_as_processed(email_data["graph_msg_id"])
         # Update Metadata if provided (e.g. stateful score tracking)
         if result_package.get("new_track_metadata"):
             scenario.db_manager.update_active_problem_metadata(email_data["sender_email"], result_package["new_track_metadata"])
@@ -252,8 +254,9 @@ def inform_level_error(email_data, student_level_idx, scenario, attempted_level_
     subj = f"Re: {email_data['subject']}" if email_data['subject'] and not email_data['subject'].lower().startswith("re:") else email_data['subject']
     if not subj: subj = "Angående nivåstart"
 
-    graph_send_email(email_data["sender_email"], subj, msg,
+    if graph_send_email(email_data["sender_email"], subj, msg,
                      email_data["internet_message_id"],
                      email_data["references_header_value"],
                      email_data["graph_conversation_id_incoming"],
-                     from_user_id=scenario.target_email)
+                     from_user_id=scenario.target_email):
+        scenario.db_manager.mark_email_as_processed(email_data["graph_msg_id"])
