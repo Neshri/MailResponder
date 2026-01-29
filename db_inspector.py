@@ -62,47 +62,7 @@ def print_db_content(db_paths, email_filter=None, search_term=None):
             except Exception as e: 
                 print(f"  [Error]: {e}")
 
-    # --- 2. Active Problems ---
-    print(f"\n--- ACTIVE PROBLEMS ({os.path.basename(db_paths['main'])}) ---")
-    conn = _get_inspector_conn(db_paths['main'])
-    if conn:
-        with conn:
-            try:
-                cursor = conn.cursor()
-                query = "SELECT * FROM active_problems"
-                params = []
-                conditions = []
-                if email_filter:
-                    conditions.append("student_email = ?")
-                    params.append(email_filter)
-                if search_term:
-                    conditions.append("(student_email LIKE ? OR conversation_history LIKE ?)")
-                    params.extend([f"%{search_term}%", f"%{search_term}%"])
-                
-                if conditions:
-                    query += " WHERE " + " OR ".join(conditions)
-                query += " ORDER BY student_email"
-                
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
-                if not rows: 
-                    print("  [Empty or No Match]")
-                else:
-                    for r in rows:
-                        d = dict(r)
-                        print(f"\n  >>> STUDENT: {d.get('student_email')} | PROBLEM: {d.get('problem_id')}")
-                        print(f"  LEVEL: {d.get('current_level_index')} | METADATA: {d.get('track_metadata')}")
-                        if email_filter or search_term:
-                            print("  HISTORY:")
-                            print("-" * 40)
-                            print(d.get('conversation_history', '').strip())
-                            print("-" * 40)
-                        else:
-                            print(f"  history_len: {len(d.get('conversation_history', ''))} chars")
-            except Exception as e: 
-                print(f"  [Error]: {e}")
-
-    # --- 3. Completed Conversations ---
+    # --- 2. Completed Conversations ---
     print(f"\n--- COMPLETED CONVERSATIONS ({os.path.basename(db_paths['completed'])}) ---")
     conn = _get_inspector_conn(db_paths['completed'])
     if conn:
@@ -136,6 +96,46 @@ def print_db_content(db_paths, email_filter=None, search_term=None):
                             print("-" * 40)
                             print(d.get('full_conversation_history', '').strip())
                             print("-" * 40)
+            except Exception as e: 
+                print(f"  [Error]: {e}")
+
+    # --- 3. Active Problems ---
+    print(f"\n--- ACTIVE PROBLEMS ({os.path.basename(db_paths['main'])}) ---")
+    conn = _get_inspector_conn(db_paths['main'])
+    if conn:
+        with conn:
+            try:
+                cursor = conn.cursor()
+                query = "SELECT * FROM active_problems"
+                params = []
+                conditions = []
+                if email_filter:
+                    conditions.append("student_email = ?")
+                    params.append(email_filter)
+                if search_term:
+                    conditions.append("(student_email LIKE ? OR conversation_history LIKE ?)")
+                    params.extend([f"%{search_term}%", f"%{search_term}%"])
+                
+                if conditions:
+                    query += " WHERE " + " OR ".join(conditions)
+                query += " ORDER BY student_email ASC"
+                
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                if not rows: 
+                    print("  [Empty or No Match]")
+                else:
+                    for r in rows:
+                        d = dict(r)
+                        print(f"\n  >>> STUDENT: {d.get('student_email')} | PROBLEM: {d.get('problem_id')}")
+                        print(f"  LEVEL: {d.get('current_level_index')} | METADATA: {d.get('track_metadata')}")
+                        if email_filter or search_term:
+                            print("  HISTORY:")
+                            print("-" * 40)
+                            print(d.get('conversation_history', '').strip())
+                            print("-" * 40)
+                        else:
+                            print(f"  history_len: {len(d.get('conversation_history', ''))} chars")
             except Exception as e: 
                 print(f"  [Error]: {e}")
     
