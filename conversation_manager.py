@@ -29,7 +29,8 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
     
     # Initialize Track Metadata if needed (Default empty for generic scenarios)
     track_metadata = {}
-    # Example: if scenario.name == "Evil Persona": track_metadata = {"anger_level": 100}
+    if scenario.name.lower() == "arga alex":
+        track_metadata = {"anger_level": 100}
 
     if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
         reply_subject = email_data["subject"]
@@ -91,6 +92,21 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     # 2. Generate Reply
     context_enhanced_history = full_history_string
     
+    # Handle Anger Level Logic
+    current_anger = 0
+    if scenario.name.lower() == "arga alex":
+        current_anger = track_metadata.get("anger_level", 100)
+        # Adjust anger
+        old_anger = current_anger
+        current_anger = max(0, min(100, current_anger + score_adjustment))
+        track_metadata["anger_level"] = current_anger
+        
+        logging.info(f"Arga Alex ({student_email}): Anger update {old_anger} -> {current_anger} (adj: {score_adjustment})")
+
+        # Inject into context for Persona so it knows current level
+        # We pretend it's in the history so the persona prompt "finds it in history"
+        context_enhanced_history += f"\n\n[SYSTEM: Nuvarande Ilskenivå: {current_anger}]"
+    
     persona_context = problem_info.get('persona_context')
     if not persona_context:
         # Fallback/Legacy
@@ -109,6 +125,10 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         system_prompt=scenario.persona_prompt,
         has_images=email_data_for_result.get("has_images", False)
     )
+
+    # Append Anger Level to the reply if active
+    if scenario.name.lower() == "arga alex" and ulla_final_reply_text:
+        ulla_final_reply_text += f"\n\n[Ilskenivå: {current_anger}]"
 
     result_package = {
         "email_data": email_data_for_result,
