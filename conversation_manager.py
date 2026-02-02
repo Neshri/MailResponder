@@ -105,6 +105,14 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     scenario.db_manager.add_debug_evaluator_response(student_email, problem_info_id, evaluator_raw_response)
     
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
+    
+    # Safety Override: Arga Alex scenario cannot be solved if anger level is still high
+    if (scenario.name.lower() == "arga alex" or "arga_alex" in scenario.db_manager.db_file) and is_solved_by_evaluator:
+        current_anger = track_metadata.get("anger_level", 100)
+        if current_anger > 10:
+             logging.info(f"LLM-tråd ({student_email}): Överskrider evaluatorns [LÖST] - Ilskenivå {current_anger} är för hög (>10).")
+             is_solved_by_evaluator = False
+             evaluator_marker = "[EJ_LÖST]" # Update marker for persona generator too
 
     # 2. Generate Reply
     context_enhanced_history = full_history_string
