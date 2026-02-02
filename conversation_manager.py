@@ -155,8 +155,18 @@ def process_completed_problem(result_package, email_data, scenario):
     Process the completion of a problem, including level advancement and archiving.
     """
     is_solved = result_package["is_solved"]
+    
+    # Check for Fail State (Anger > 200)
+    anger_level = result_package.get("new_track_metadata", {}).get("anger_level", 0)
+    is_failed = (anger_level >= 200)
 
-    if is_solved and "\nStartfras för nästa nivå" not in result_package["ulla_final_reply_body"] and "\nDu har klarat alla nivåer!" not in result_package["ulla_final_reply_body"]:
+    if is_failed:
+         result_package["is_solved"] = False # Ensure it counts as a fail
+         fail_msg = "\n\n[SYSTEM: KONTAKTEN BRUTEN] Kunden har nått en nivå av raseri där de inte längre går att kommunicera med. Du har MISSLYCKATS med de-eskaleringen. Övningen avbryts."
+         result_package["ulla_final_reply_body"] += fail_msg
+         logging.warning(f"Main: Student {email_data['sender_email']} misslyckades (Ilskenivå {anger_level}).")
+
+    if is_solved and not is_failed and "\nStartfras för nästa nivå" not in result_package["ulla_final_reply_body"] and "\nDu har klarat alla nivåer!" not in result_package["ulla_final_reply_body"]:
         active_lvl_idx = result_package["active_problem_level_idx"]
         prob_id = result_package["active_problem_info_id"]
         
@@ -202,7 +212,8 @@ def process_completed_problem(result_package, email_data, scenario):
 
         # SECOND, save Ulla's reply.
         scenario.db_manager.append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
-        if is_solved:
+        
+        if is_solved or is_failed:
             # --- Save the completed conversation before clearing it ---
             final_history_for_archive = result_package["full_history_string"] + ulla_db_entry
             scenario.db_manager.save_completed_conversation(
@@ -214,6 +225,10 @@ def process_completed_problem(result_package, email_data, scenario):
             )
 
             scenario.db_manager.clear_active_problem(email_data["sender_email"])
+
+            if is_failed:
+                # Don't advance level, but we could inform the student to try again
+                return True
 
             current_progress_level_before_update, _, _ = scenario.db_manager.get_student_progress(email_data["sender_email"])
             new_next_level_for_db = max(current_progress_level_before_update, result_package["active_problem_level_idx"] + 1)
