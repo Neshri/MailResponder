@@ -118,6 +118,10 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         has_images=email_data_for_result.get("has_images", False)
     )
 
+    # Append Anger Level to the reply if active
+    if scenario.name.lower() == "arga alex" and ulla_final_reply_text:
+        ulla_final_reply_text += f"\n\n[Ilskenivå: {current_anger}]"
+
     result_package = {
         "email_data": email_data_for_result,
         "ulla_final_reply_body": ulla_final_reply_text,
