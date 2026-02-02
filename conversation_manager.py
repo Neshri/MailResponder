@@ -34,7 +34,17 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
 
     if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
         reply_subject = email_data["subject"]
-        reply_body = problem['start_prompt']
+        initial_rant = problem['start_prompt']
+        briefing_header = ""
+        
+        if "internal_briefing" in problem:
+            briefing = problem["internal_briefing"]
+            briefing_header = f"*** INTERNT MEDDELANDE: {briefing.get('subject')} ***\n"
+            briefing_header += f"{briefing.get('body')}\n"
+            briefing_header += "--------------------------------------------------\n\n"
+        
+        reply_body = briefing_header + initial_rant
+
         if email_data.get("has_images"):
             reply_body = scenario.image_warning + "\n\n" + reply_body
         
@@ -42,16 +52,8 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
             scenario.db_manager.mark_email_as_processed(email_data["graph_msg_id"])
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']} [Scenario: {scenario.name}]")
             
-            # Send Internal Briefing if it exists
-            if "internal_briefing" in problem:
-                briefing = problem["internal_briefing"]
-                logging.info(f"Skickar internt briefing-mejl till {email_data['sender_email']}")
-                graph_send_email(
-                    email_data["sender_email"], 
-                    briefing.get("subject", "INTERNT MEDDELANDE"), 
-                    briefing.get("body", ""), 
-                    from_user_id=scenario.target_email
-                )
+            if briefing_header:
+                logging.info(f"LLM-start: Briefing inkluderad i start-mejlet för {problem.get('id')}.")
 
             return True
         else:
