@@ -10,8 +10,9 @@
                 "persona_context": {
                     "description": "Kunden är rasande för att ingenting fungerar (ingen internet/mail).",
                     "reality": {
-                        "teknisk_orsak": "Fiberavbrott pga fallna träd i stormen.",
-                        "status": "Reparatörer är på plats men det kommer ta minst 4 timmar till.",
+                        "symtom": "Ingen internet, mailen står och tuggar, routern blinkar rött.",
+                        "faktisk_orsak_hemlig": "Fiberavbrott pga fallna träd i stormen. Detta vet du INTE från början.",
+                        "status_vid_efterfrågan": "Reparatörer är på plats men det kommer ta minst 4 timmar till.",
                         "lösning": "INGEN teknisk lösning möjlig för studenten. Endast de-eskalering och information gäller."
                     },
                     "anger_triggers": [
