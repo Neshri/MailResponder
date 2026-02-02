@@ -120,6 +120,7 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
 
     # Append Anger Level to the reply if active
     if scenario.name.lower() == "arga alex" and ulla_final_reply_text:
+        current_anger = track_metadata.get("anger_level", 100)
         ulla_final_reply_text += f"\n\n[Ilskenivå: {current_anger}]"
 
     result_package = {

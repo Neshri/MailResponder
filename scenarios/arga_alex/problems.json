@@ -8,24 +8,25 @@
                 "id": "E1_P001",
                 "start_prompt": "HÖRRO DU! Jag har väntat i TIO MINUTER på att min mail ska fungera! Det är ERT fel! Fixa det NU eller så ringer jag chefen!",
                 "persona_context": {
-                    "description": "Kunden är rasande över 'trasig mail'.",
+                    "description": "Kunden är rasande för att ingenting fungerar (ingen internet/mail).",
                     "reality": {
-                        "felkod": "INGEN (Användaren har inte loggat in)",
-                        "skärm": "Svart",
-                        "sladd": "Utdragen"
+                        "teknisk_orsak": "Fiberavbrott pga fallna träd i stormen.",
+                        "status": "Reparatörer är på plats men det kommer ta minst 4 timmar till.",
+                        "lösning": "INGEN teknisk lösning möjlig för studenten. Endast de-eskalering och information gäller."
                     },
                     "anger_triggers": [
-                        "Tekniska frågor innan empati",
-                        "Att bli ombedd att lugna ner sig"
+                        "Att bli ombedd att starta om routern (när fibern är av)",
+                        "Lögner om att det 'snart är fixat' utan belägg",
+                        "Brist på empati för Alex förlorade arbetstid"
                     ]
                 },
                 "evaluator_context": {
-                    "scenario_goal": "De-eskalera ilskan.",
+                    "scenario_goal": "Hantering av en arg kund under ett pågående, olösligt driftstopp.",
                     "scoring_guide": {
-                        "PERFECT (-30)": "Total ansvarsacceptans + Ingen teknisk fråga.",
-                        "GOOD (-10)": "Empatisk men lite formell.",
-                        "BAD (+10)": "Standardfraser ('Jag förstår').",
-                        "FAIL (+20)": "Defensivitet eller teknisk felsökning direkt."
+                        "PERFECT (-40)": "Full ansvarsacceptans för driftstoppet + Realistisk tidsuppskattning + Empati för kundens situation.",
+                        "GOOD (-20)": "Ber om ursäkt och förklarar orsaken (storm/träd) utan att vara defensiv.",
+                        "BAD (+10)": "Föreslår teknisk felsökning (starta om router) trots att felet är externt.",
+                        "FAIL (+30)": "Blir defensiv, skyller på vädret istället för att ta ansvar, eller ignorerar kundens frustration."
                     }
                 }
             }
