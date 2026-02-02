@@ -2,7 +2,6 @@ import re
 import json
 import logging
 from config import PERSONA_MODEL, ULLA_IMAGE_WARNING
-from prompts import ULLA_PERSONA_PROMPT
 from llm_client import chat_with_model
 from email_parser import get_name_from_email
 
@@ -61,7 +60,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
 
     logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    system_prompt_content = system_prompt if system_prompt else ULLA_PERSONA_PROMPT
+    system_prompt_content = system_prompt if system_prompt else "Du är en hjälpsam assistent."
 
     if evaluator_decision_marker == "[LÖST]":
         # SUCCESS STATE - Can also be generalized if needed, but keeping simple for now

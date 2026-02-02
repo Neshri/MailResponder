@@ -2,7 +2,6 @@ import json
 import re
 import logging
 from config import EVAL_MODEL
-from prompts import EVALUATOR_SYSTEM_PROMPT
 from llm_client import chat_with_model
 
 def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, model_name, problem_id=None, system_prompt=None):
@@ -36,7 +35,7 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
     
     # Fallback if not provided
     if not system_prompt:
-        system_prompt = EVALUATOR_SYSTEM_PROMPT
+        system_prompt = "Bedöm om studenten har löst problemet. Svara [LÖST] eller [EJ_LÖST]."
 
     messages_for_evaluator = [
         {'role': 'system', 'content': system_prompt},

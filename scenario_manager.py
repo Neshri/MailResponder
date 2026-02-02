@@ -7,6 +7,7 @@ from database import DatabaseManager
 
 from dotenv import load_dotenv
 import config as global_config
+from config import EVAL_MODEL
 
 @dataclass
 class Scenario:
@@ -101,12 +102,12 @@ class ScenarioManager:
                 with open(evaluator_path, "r", encoding="utf-8") as f: evaluator_prompt = f.read()
 
             if not persona_prompt:
-                from prompts import ULLA_PERSONA_PROMPT
-                persona_prompt = ULLA_PERSONA_PROMPT
+                logging.error(f"Scenario {config.get('scenario_name')}: Missing persona_prompt.txt!")
+                persona_prompt = "Du är en hjälpsam assistent." # Generic fallback
                 
             if not evaluator_prompt:
-                from prompts import EVALUATOR_SYSTEM_PROMPT
-                evaluator_prompt = EVALUATOR_SYSTEM_PROMPT
+                logging.error(f"Scenario {config.get('scenario_name')}: Missing evaluator_prompt.txt!")
+                evaluator_prompt = "Bedöm om studenten har löst problemet. Svara [LÖST] eller [EJ_LÖST]." # Generic fallback
             
             # Determine Models (Config -> Global Env -> Fail)
             p_model = config.get("persona_model") or os.getenv("PERSONA_MODEL") or global_config.PERSONA_MODEL

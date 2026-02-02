@@ -27,9 +27,10 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
         
     problem = random.choice(problem_list_for_level)
     
-    # Initialize Track Metadata if needed (Default empty for generic scenarios)
+    # Initialize Track Metadata if needed
     track_metadata = {}
-    # Example: if scenario.name == "Evil Persona": track_metadata = {"anger_level": 100}
+    if scenario.name == "Arga Alex" or "arga_alex" in scenario.db_manager.db_file:
+        track_metadata = {"anger_level": 100}
 
     if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
         reply_subject = email_data["subject"]
@@ -63,7 +64,6 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     if track_metadata is None: track_metadata = {}
 
     # 1. Evaluate
-    # 1. Evaluate
     # Extract Contexts - Support legacy and new structure
     evaluator_context = problem_info.get('evaluator_context')
     if not evaluator_context: 
@@ -82,22 +82,30 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         system_prompt=scenario.evaluator_prompt
     )
     
+    # Update Anger Level if applicable
+    if "anger_level" in track_metadata:
+        track_metadata["anger_level"] += score_adjustment
+        logging.info(f"LLM-tråd ({student_email}): Ilskenivå justerad med {score_adjustment}. Ny nivå: {track_metadata['anger_level']}")
+
     # Store the raw evaluator response in the debug log
     scenario.db_manager.add_debug_evaluator_response(student_email, problem_info_id, evaluator_raw_response)
     
-    # TODO: Add specific "Evil Persona" logic here if needed, checking scenario.name or type
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
 
     # 2. Generate Reply
     context_enhanced_history = full_history_string
     
-    persona_context = problem_info.get('persona_context')
+    persona_context = problem_info.get('persona_context', {}).copy()
     if not persona_context:
         # Fallback/Legacy
         persona_context = {
             "description": problem_info.get('beskrivning', ''),
             "technical_facts": problem_info.get('tekniska_fakta', {})
         }
+    
+    # Inject Anger Level into context for the persona to see
+    if "anger_level" in track_metadata:
+        persona_context["current_anger_level_tag"] = f"[Ilskenivå: {track_metadata['anger_level']}]"
     
     ulla_final_reply_text = get_persona_reply(
         student_email,
