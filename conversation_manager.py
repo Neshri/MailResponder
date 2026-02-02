@@ -41,6 +41,18 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
         if graph_send_email(email_data["sender_email"], reply_subject, reply_body, conversation_id=email_data["graph_conversation_id_incoming"], from_user_id=scenario.target_email):
             scenario.db_manager.mark_email_as_processed(email_data["graph_msg_id"])
             logging.info(f"Skickade problem (Nivå {student_next_eligible_level_idx+1}) till {email_data['sender_email']} [Scenario: {scenario.name}]")
+            
+            # Send Internal Briefing if it exists
+            if "internal_briefing" in problem:
+                briefing = problem["internal_briefing"]
+                logging.info(f"Skickar internt briefing-mejl till {email_data['sender_email']}")
+                graph_send_email(
+                    email_data["sender_email"], 
+                    briefing.get("subject", "INTERNT MEDDELANDE"), 
+                    briefing.get("body", ""), 
+                    from_user_id=scenario.target_email
+                )
+
             return True
         else:
             logging.error("Misslyckades skicka initialt problem för ny nivå.")

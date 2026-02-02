@@ -7,22 +7,26 @@
             {
                 "id": "E1_P001",
                 "start_prompt": "HÖRRO DU! Jag har väntat i TIO MINUTER på att min mail ska fungera! Det är ERT fel! Fixa det NU eller så ringer jag chefen!",
+                "internal_briefing": {
+                    "subject": "[INTERNT] Driftstörning: Fiberavbrott (KID: E1_P001)",
+                    "body": "HEJ SUPPORTEN,\n\nVi har ett bekräftat fiberavbrott i zon 4 pga fallna träd. Driftstyrkan är på väg men beräknad lagningstid är 4 timmar. \n\nKunderna i området (inklusive Alex) kommer ha blinkande röda routrar och ingen access. De-eskalera drabbade kunder.\n\n/Driftavdelningen"
+                },
                 "persona_context": {
                     "description": "Kunden är rasande för att ingenting fungerar (ingen internet/mail).",
                     "reality": {
-                        "symtom": "Ingen internet, mailen står och tuggar, routern blinkar rött.",
-                        "faktisk_orsak_hemlig": "Fiberavbrott pga fallna träd i stormen. Detta vet du INTE från början.",
-                        "status_vid_efterfrågan": "Reparatörer är på plats men det kommer ta minst 4 timmar till.",
-                        "lösning": "INGEN teknisk lösning möjlig för studenten. Endast de-eskalering och information gäller."
+                        "symtom": "Inget internet, mailen står och tuggar, routern blinkar rött.",
+                        "detta_är_allt_du_vet": "Du har ingen aning om varför det är trasigt. För dig är det bara ERT fel.",
+                        "lösning": "Kräv att de fixar det NU. Acceptera inga undanflykter förrän de faktiskt förklarar vad som händer."
                     },
                     "anger_triggers": [
-                        "Att bli ombedd att starta om routern (när fibern är av)",
-                        "Lögner om att det 'snart är fixat' utan belägg",
-                        "Brist på empati för Alex förlorade arbetstid"
+                        "Att bli ombedd att starta om routern (när du redan sagt att det inte funkar)",
+                        "Att få svar som känns som 'copy-paste' floskler",
+                        "Att inte bli tagen på allvar"
                     ]
                 },
                 "evaluator_context": {
-                    "scenario_goal": "Hantering av en arg kund under ett pågående, olösligt driftstopp.",
+                    "scenario_goal": "Hantering av en arg kund under ett pågående driftstopp. Orsak: Fiberavbrott pga träd.",
+                    "actual_reality": "Fiberavbrott pga träd, 4h väntetid.",
                     "scoring_guide": {
                         "PERFECT (-40)": "Full ansvarsacceptans för driftstoppet + Realistisk tidsuppskattning + Empati för kundens situation.",
                         "GOOD (-20)": "Ber om ursäkt och förklarar orsaken (storm/träd) utan att vara defensiv.",

@@ -76,8 +76,9 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
                 final_decision = f"[{match.group(1)}]"
                 break
         
-        # Return result with potential score adjustment
-        result_marker = final_decision if final_decision else ("[LÖST]" if score_adjustment != 0 else "[EJ_LÖST]")
+        # Return result: Only LÖST if explicitly stated, otherwise EJ_LÖST (even if score adjustment exists)
+        # This prevents the de-escalation track from finishing before the anger is gone.
+        result_marker = final_decision if final_decision else "[EJ_LÖST]"
         
         # We'll return a richer response for conversation_manager to handle
         return result_marker, raw_eval_reply_from_llm, score_adjustment
