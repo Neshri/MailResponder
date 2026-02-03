@@ -116,7 +116,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         response = chat_with_model(
             model=PERSONA_MODEL,
             messages=messages_for_ulla,
-            options={'temperature': 0.7, 'num_predict': 1000, 'repeat_penalty': 1.1}
+            options={'temperature': 0.8, 'num_predict': 1000, 'repeat_penalty': 1.1}
         )
         if not response:
             return "Åh nej, nu tappade jag visst bort mig lite..."

@@ -87,13 +87,21 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
             "solution_keywords": problem_info.get('losning_nyckelord', [])
         }
 
+    # Pass history context ONLY for scenarios that need it (e.g., de-escalation/trend analysis)
+    # Default scenarios (like Ulla) should only see the latest message to avoid confusion.
+    eval_history_context = None
+    if scenario.name.lower() == "arga alex" or "arga_alex" in scenario.db_manager.db_file:
+        history_entries = [e.strip() for e in full_history_string.split("\n\n") if e.strip()]
+        eval_history_context = "\n\n".join(history_entries[-6:]) if history_entries else ""
+
     evaluator_marker, evaluator_raw_response, score_adjustment = get_evaluator_decision(
         student_email,
         evaluator_context,
         latest_student_message_cleaned,
         scenario.eval_model,
         problem_info_id,
-        system_prompt=scenario.evaluator_prompt
+        system_prompt=scenario.evaluator_prompt,
+        history_string=eval_history_context
     )
     
     # Update Anger Level if applicable

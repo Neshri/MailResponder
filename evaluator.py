@@ -4,7 +4,7 @@ import logging
 from config import EVAL_MODEL
 from llm_client import chat_with_model
 
-def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, model_name, problem_id=None, system_prompt=None):
+def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, model_name, problem_id=None, system_prompt=None, history_string=None):
     """
     Uses LLM to evaluate if the student's message contains a correct solution.
     """
@@ -17,10 +17,12 @@ def get_evaluator_decision(student_email, evaluator_context, latest_student_mess
     # Serialize context for the LLM
     context_str = json.dumps(evaluator_context, indent=2, ensure_ascii=False)
 
+    history_block = f"\n**Konverteringshistorik (för sammanhang):**\n---\n{history_string}\n---\n" if history_string else ""
+
     evaluator_prompt_content = f"""
 **SCENARIO & UTVÄRDERINGSKONTEXT:**
 {context_str}
-
+{history_block}
 **Studentens SENASTE Meddelande:**
 ---
 {latest_student_message_cleaned}
@@ -28,7 +30,7 @@ def get_evaluator_decision(student_email, evaluator_context, latest_student_mess
 
 **Uppgift:**
 Följ ALLA regler och formatkrav från din system-prompt.
-Utvärdera studentens meddelande noggrant baserat på kontexten ovan.
+Utvärdera studentens SENASTE meddelande noggrant baserat på kontexten och historiken ovan.
 Generera först ett <think>-block med din fullständiga analys.
 Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på en ny rad.
 """
