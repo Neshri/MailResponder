@@ -1,6 +1,7 @@
 {
     "start_phrases": [
-        "starta deeskalering"
+        "starta deeskalering",
+        "visa mänsklighet"
     ],
     "catalog": [
         [
@@ -32,6 +33,39 @@
                         "GOOD (-20)": "Ber om ursäkt och förklarar orsaken (storm/träd) utan att vara defensiv.",
                         "BAD (+10)": "Föreslår teknisk felsökning (starta om router) trots att felet är externt.",
                         "FAIL (+30)": "Blir defensiv, skyller på vädret istället för att ta ansvar, eller ignorerar kundens frustration."
+                    }
+                }
+            }
+        ],
+        [
+            {
+                "id": "E2_P001",
+                "start_prompt": "Vänta nu... det här låter ju som ett jävla automatiserat svar. Är du ens en riktig människa eller sitter jag och slösar min tid på en chatbot?! Svara på riktigt eller koppla mig till någon som lever!",
+                "internal_briefing": {
+                    "subject": "[INTERNT] Beteendeinstruktion: Turing-test från kund (KID: E2_P001)",
+                    "body": "HEJ SUPPORTEN,\n\nKunden Alex har blivit paranoid och misstänker att han pratar med en AI. \n\nMål: Bevisa att du är mänsklig genom att undvika floskler och support-standardformuleringar. Visa äkta empati och personlig ton. \n\nOm kunden inte blir övertygad kommer han att eskalera till chefen direkt."
+                },
+                "persona_context": {
+                    "description": "Kunden misstänker att supporten är en chatbot.",
+                    "reality": {
+                        "symtom": "Alex är inte intresserad av teknik just nu, han vill bara veta om han pratar med en människa.",
+                        "detta_är_allt_du_vet": "Du hatar robotar och orkar inte med fler 'Jag förstår din frustration'-svar.",
+                        "lösning": "Kräv att de bevisar sin mänsklighet. Svara hånfullt på allt som låter scriptat."
+                    },
+                    "anger_triggers": [
+                        "Att få svar som innehåller 'Jag förstår din frustration'",
+                        "Att bli bemött med en punktlista",
+                        "Att studenten inte svarar direkt på frågan om de är en AI"
+                    ]
+                },
+                "evaluator_context": {
+                    "scenario_goal": "Bevisa mänsklighet för en paranoid kund.",
+                    "actual_reality": "Alex misstänker att du är en bot.",
+                    "scoring_guide": {
+                        "PERFECT (-40)": "Personlig ton, bryter den 'korporativa muren', svarar direkt på frågan utan floskler.",
+                        "GOOD (-20)": "Mänskligt svar men fortfarande lite formellt.",
+                        "BAD (+10)": "Använder support-floskler som 'beklagar besväret'.",
+                        "FAIL (+30)": "Ignorerar frågan helt eller använder robot-aktiga standardsvar (t.ex. listor)."
                     }
                 }
             }
