@@ -14,6 +14,9 @@ def get_evaluator_decision(student_email, evaluator_context, latest_student_mess
 
     logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{model_name}'.")
 
+    # Serialize context for the LLM
+    context_str = json.dumps(evaluator_context, indent=2, ensure_ascii=False)
+
     history_block = f"\n**Konversationshistorik (för sammanhang):**\n---\n{history_string}\n---\n" if history_string else ""
 
     evaluator_prompt_content = f"""
