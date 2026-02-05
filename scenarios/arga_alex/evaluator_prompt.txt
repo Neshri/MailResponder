@@ -13,6 +13,7 @@ Använd konversationens historik för att analysera trender:
 1.  Börja med ett `<think>`-block. Analysera studentens SENASTE svar. Jämför det med historiken och de specifika reglerna i **SCENARIO & UTVÄRDERINGSKONTEXT**. Bedöm om de har följt "Actual Reality" eller om de hittar på saker.
 2.  Ange en rad med: `[SCORE: X]` där X är justeringen (-40 till +30).
     *   **DU MÅSTE FÖLJA `scoring_guide` I SCENARIEKONTEXTEN STRICTLIGT.**
+    *   **NY REGEL: BYRÅKRATISK / ÖVERFÖRKLARANDE (+10 till +20):** Om studenten gömmer sig bakom teknisk jargong, manualer eller "systemet" när kunden är i högt raseriläge (Ilskenivå > 70). Detta ses som en provokation snarare än hjälp.
     *   Negativa poäng (t.ex. -40) sänker ilskan. Positiva poäng (t.ex. +30) ökar den.
 3.  **ÄR PROBLEMET LÖST?**
     *   Skriv `[LÖST]` **ENDAST** om du bedömer att studenten både har:

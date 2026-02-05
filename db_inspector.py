@@ -128,14 +128,21 @@ def print_db_content(db_paths, email_filter=None, search_term=None):
                     for r in rows:
                         d = dict(r)
                         print(f"\n  >>> STUDENT: {d.get('student_email')} | PROBLEM: {d.get('problem_id')}")
-                        print(f"  LEVEL: {d.get('current_level_index')} | METADATA: {d.get('track_metadata')}")
+                        
+                        # Try to extract Ilskenivå trend
+                        history = d.get('conversation_history', '')
+                        anger_trend = re.findall(r'\[Ilskenivå: (-?\d+)\]', history)
+                        trend_str = " -> ".join(anger_trend) if anger_trend else "N/A"
+                        
+                        print(f"  LEVEL: {d.get('current_level_index')} | ANGER TREND: {trend_str}")
+                        print(f"  METADATA: {d.get('track_metadata')}")
                         if email_filter or search_term:
                             print("  HISTORY:")
                             print("-" * 40)
-                            print(d.get('conversation_history', '').strip())
+                            print(history.strip())
                             print("-" * 40)
                         else:
-                            print(f"  history_len: {len(d.get('conversation_history', ''))} chars")
+                            print(f"  history_len: {len(history)} chars")
             except Exception as e: 
                 print(f"  [Error]: {e}")
     
