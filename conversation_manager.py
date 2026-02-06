@@ -229,7 +229,7 @@ def process_completed_problem(result_package, email_data, scenario):
     if email_data.get("has_images") and scenario.image_warning:
         result_package["ulla_final_reply_body"] = scenario.image_warning + "\n\n" + result_package["ulla_final_reply_body"]
 
-    ulla_db_entry = f"Ulla: {result_package['ulla_final_reply_body']}\n\n"
+    ulla_db_entry = f"{scenario.persona_name}: {result_package['ulla_final_reply_body']}\n\n"
 
     reply_s = result_package["reply_subject"]
     if not reply_s.lower().startswith("re:"): reply_s = f"Re: {result_package['reply_subject']}"
@@ -247,7 +247,7 @@ def process_completed_problem(result_package, email_data, scenario):
         # FIRST, save the student's message that we passed through.
         scenario.db_manager.append_to_active_problem_history(email_data["sender_email"], result_package["student_entry_for_db"])
 
-        # SECOND, save Ulla's reply.
+        # SECOND, save Persona's reply.
         scenario.db_manager.append_to_active_problem_history(email_data["sender_email"], ulla_db_entry)
         
         if is_solved or is_failed:

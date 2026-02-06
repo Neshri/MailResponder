@@ -1,5 +1,6 @@
 {
     "scenario_name": "Ulla Support",
+    "persona_name": "Ulla",
     "description": "The classic Ulla tech support simulation.",
     "target_email_env_var": "BOT_EMAIL_ADDRESS",
     "db_prefix": "ulla",

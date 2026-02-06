@@ -118,6 +118,7 @@ class ScenarioManager:
 
             scenario = Scenario(
                 name=config.get("scenario_name", "Unknown"),
+                persona_name=config.get("persona_name", "Support"),
                 description=config.get("description", ""),
                 target_email=target_email,
                 persona_model=p_model,

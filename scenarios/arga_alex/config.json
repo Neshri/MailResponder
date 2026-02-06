@@ -1,5 +1,6 @@
 {
     "scenario_name": "Arga Alex",
+    "persona_name": "Alex",
     "description": "De-escalation training with an angry customer.",
     "target_email_env_var": "BOT_EMAIL_ADDRESS",
     "db_prefix": "alex",

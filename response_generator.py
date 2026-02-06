@@ -121,12 +121,23 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         if not response:
             return "Åh nej, nu tappade jag visst bort mig lite..."
 
-        ulla_svar = response.strip()
-        ulla_svar = re.sub(r"<think>.*?</think>", "", ulla_svar, flags=re.DOTALL).strip()
-        ulla_svar = re.sub("</end_of_turn>", "", ulla_svar)
-        ulla_svar = strip_markdown(ulla_svar)
-        logging.info(f"Persona AI ({student_email}): Genererade svar: '{ulla_svar[:150]}...'")
-        return ulla_svar
+        persona_svar = response.strip()
+        persona_svar = re.sub(r"<think>.*?</think>", "", persona_svar, flags=re.DOTALL).strip()
+        
+        # Clean up common LLM artifacts
+        artifacts_to_strip = [
+            "</end_of_turn>", "<end_of_turn>", 
+            "</start_of_turn>", "<start_of_turn>",
+            "</startofturn>", "<startofturn>",
+            "</endofturn>", "<endofturn>",
+            "User:", "Assistant:", "Human:", "AI:"
+        ]
+        for art in artifacts_to_strip:
+            persona_svar = persona_svar.replace(art, "")
+
+        persona_svar = strip_markdown(persona_svar.strip())
+        logging.info(f"Persona AI ({student_email}): Genererade svar: '{persona_svar}'")
+        return persona_svar
     except Exception as e:
         logging.error(f"Persona AI ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
         return "Åh nej, nu tappade jag visst bort mig lite..."
