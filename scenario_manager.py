@@ -12,6 +12,7 @@ from config import EVAL_MODEL
 @dataclass
 class Scenario:
     name: str
+    persona_name: str
     description: str
     target_email: str
     persona_model: str

@@ -58,6 +58,7 @@ class TestCoreSimulation(unittest.TestCase):
         
         self.scenario = Scenario(
             name="Test Scenario",
+            persona_name="Test Persona",
             description="Unit Test",
             target_email="test_bot@movant.org",
             persona_model="mock-model",
