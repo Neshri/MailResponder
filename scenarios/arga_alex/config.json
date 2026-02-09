@@ -5,5 +5,5 @@
     "target_email_env_var": "BOT_EMAIL_ADDRESS",
     "db_prefix": "alex",
     "image_warning_message": "VAD? JAG SER INGA BILDER! SKRIV VAD DU MENAR ISTÄLLET FÖR ATT SKICKA BILDER SOM EN IDIOT!",
-    "enabled": false
+    "enabled": true
 }
