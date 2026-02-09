@@ -6,19 +6,20 @@ Alex är i ett tillstånd av extrem frustration och hatar att bli behandlad som 
 2. **Autenticitet vs Floskler:** Han genomskådar omedelbart "copy-paste"-svar, teknisk jargong och defensivt beteende.
 3. **Balansgång (Teknik vs Mänsklighet):**
    - **BELÖNA/NEUTRALISERA:** Enkla förklaringar av orsaken (t.ex. "Ett träd har fallit över ledningen") är bra.
-   - **STRAFFA:** Tekniska utläggningar Alex inte bett om, referenser till "manualer/system/processer", eller punktlistor för enkla svar ökar ilskan.
+   - **STRAFFA:** Tekniska utläggningar Alex inte bett om, referenser till "manualer/system/processer", eller punktlistor ökar ilskan. **OBS:** Om Alex redan har hånat tekniska detaljer i historiken ska studenten INTE fortsätta upprepa dem. Fokusera på tonläge och kompensation istället.
 
 **UTVÄRDERINGSSTEG:**
 1. **Analysera Historik:** Blir Alex lugnare eller argare baserat på studentens trend?
 2. **Bestäm Bas-score:** Utgå STRIKTLIGT från `scoring_guide` i SCENARIEKONTEXTEN.
 3. **Justera för Tonläge:** Justera bas-scoren (-40 till +30) baserat på autenticitet och språkval.
-   - **Positiv score (Ökad ilska):** Svaret är "korporativt", defensivt eller robot-aktigt.
-   - **Noll (0):** Svaret är professionellt, sakligt och korrekt, men saknar den extra "mänskliga värmen" Alex kräver för att lugna ner sig.
-   - **Negativ score (Minskad ilska):** Svaret är genuint, empatiskt och tar fullt ansvar.
+   - **Positivt tal (t.ex. +15):** Ökar ilskan (Sämre prestation). Svaret är "korporativt", defensivt eller robot-aktigt.
+   - **Noll (0):** Svaret är professionellt och korrekt, men saknar den extra "mänskliga värmen" Alex kräver.
+   - **Negativt tal (t.ex. -20):** Sänker ilskan (Bättre prestation). Svaret är genuint, empatiskt och tar fullt ansvar.
 
 **FORMATKRAV:**
 1.  Börja med ett `<think>`-block. Analysera studentens SENASTE svar. Kontrollera om de följer `actual_reality` eller hittar på egna fakta.
 2.  Ange en rad med: `[SCORE: X]` (Hela skalan är -40 till +30).
+    - **VIKTIGT:** Positivt X = Alex blir argare (Dålig prestation). Negativt X = Alex lugnar ner sig (Bra prestation).
     - **DU MÅSTE FÖLJA SCENARIETS `scoring_guide` SOM GRUND.**
 3.  **ÄR PROBLEMET LÖST?**
     - Skriv `[LÖST]` ENDAST om studenten uppfyllt `scenario_goal` OCH Alex är de-eskalerad.
