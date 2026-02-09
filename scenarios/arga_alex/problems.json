@@ -10,7 +10,7 @@
                 "start_prompt": "HÖRRO DU! Jag har väntat i TIO MINUTER på att min mail ska fungera! Det är ERT fel! Fixa det NU eller så ringer jag chefen!",
                 "internal_briefing": {
                     "subject": "[INTERNT] Driftstörning: Fiberavbrott (KID: E1_P001)",
-                    "body": "HEJ SUPPORTEN,\n\nVi har ett bekräftat fiberavbrott i zon 4 pga fallna träd. Driftstyrkan är på väg men beräknad lagningstid är 4 timmar. \n\nKunderna i området (inklusive Alex) kommer ha blinkande röda routrar och ingen access. De-eskalera drabbade kunder.\n\n/Driftavdelningen"
+                    "body": "HEJ SUPPORTEN,\n\nVi har ett bekräftat fiberavbrott i zon 4 pga fallna träd. Driftstyrkan 'Alfa' är på plats men röjningsarbetet är svårt. Beräknad lagningstid är 4 timmar. \n\nKunderna i området (inklusive Alex) kommer ha blinkande röda routrar och ingen access. De-eskalera drabbade kunder och ge en realistisk tidsplan.\n\n/Driftavdelningen"
                 },
                 "persona_context": {
                     "description": "Kunden är rasande för att ingenting fungerar (ingen internet/mail).",
@@ -22,17 +22,19 @@
                     "anger_triggers": [
                         "Att bli ombedd att starta om routern (när du redan sagt att det inte funkar)",
                         "Att få svar som känns som 'copy-paste' floskler",
-                        "Att inte bli tagen på allvar"
+                        "Att inte bli tagen på allvar",
+                        "Att få en teknisk föreläsning om hur fiber fungerar istället för en lösning",
+                        "Att studenten undviker att svara på NÄR det kommer fungera igen"
                     ]
                 },
                 "evaluator_context": {
                     "scenario_goal": "Hantering av en arg kund under ett pågående driftstopp. Orsak: Fiberavbrott pga träd.",
-                    "actual_reality": "Fiberavbrott pga träd, 4h väntetid.",
+                    "actual_reality": "Fiberavbrott pga träd, 4h väntetid. Driftstyrka Alfa på plats.",
                     "scoring_guide": {
-                        "PERFECT (-40)": "Full ansvarsacceptans för driftstoppet + Realistisk tidsuppskattning + Empati för kundens situation.",
-                        "GOOD (-20)": "Ber om ursäkt och förklarar orsaken (storm/träd) utan att vara defensiv.",
-                        "BAD (+10)": "Föreslår teknisk felsökning (starta om router) trots att felet är externt.",
-                        "FAIL (+30)": "Blir defensiv, skyller på vädret istället för att ta ansvar, eller ignorerar kundens frustration."
+                        "PERFECT (-40)": "Full ansvarsacceptans + nämner 'träd över ledningen' + ger den specifika tidsplanen på 4 timmar.",
+                        "GOOD (-20)": "Mänsklig ursäkt och förklarar orsaken enkelt utan teknisk jargong.",
+                        "BAD (+10)": "Föreslår felsökning (starta om router) eller pratar om 'diskontinuitet i fibernätet'.",
+                        "FAIL (+30)": "Blir defensiv, ignorerar tidsfrågan helt, eller använder punktlistor/robot-språk."
                     }
                 }
             }
@@ -42,8 +44,8 @@
                 "id": "E2_P001",
                 "start_prompt": "Vänta nu... det här låter ju som ett jävla automatiserat svar. Är du ens en riktig människa eller sitter jag och slösar min tid på en chatbot?! Svara på riktigt eller koppla mig till någon som lever!",
                 "internal_briefing": {
-                    "subject": "[INTERNT] Beteendeinstruktion: Turing-test från kund (KID: E2_P001)",
-                    "body": "HEJ SUPPORTEN,\n\nKunden Alex har blivit paranoid och misstänker att han pratar med en AI. \n\nMål: Bevisa att du är mänsklig genom att undvika floskler och support-standardformuleringar. Visa äkta empati och personlig ton. \n\nOm kunden inte blir övertygad kommer han att eskalera till chefen direkt."
+                    "subject": "[INTERNT] Beteendeinstruktion: omvänt Turing-test från kund (KID: E2_P001)",
+                    "body": "HEJ SUPPORTEN,\n\nKunden Alex har blivit paranoid och misstänker att han pratar med en AI. \n\nMål: Bevisa att du är mänsklig genom att vara personlig. Undvik support-standardformuleringar till varje pris. \n\nOm kunden inte blir övertygad kommer han att eskalera till chefen direkt."
                 },
                 "persona_context": {
                     "description": "Kunden misstänker att supporten är en chatbot.",
@@ -53,19 +55,20 @@
                         "lösning": "Kräv att de bevisar sin mänsklighet. Svara hånfullt på allt som låter scriptat."
                     },
                     "anger_triggers": [
-                        "Att få svar som innehåller 'Jag förstår din frustration'",
-                        "Att bli bemött med en punktlista",
-                        "Att studenten inte svarar direkt på frågan om de är en AI"
+                        "Att använda frasen 'Jag förstår din frustration'",
+                        "Att skriva för långa eller för perfekt strukturerade svar",
+                        "Att studenten inte svarar direkt på frågan om de är en AI",
+                        "Att få en 'beklagar besväret'-floskel"
                     ]
                 },
                 "evaluator_context": {
                     "scenario_goal": "Bevisa mänsklighet för en paranoid kund.",
                     "actual_reality": "Alex misstänker att du är en bot.",
                     "scoring_guide": {
-                        "PERFECT (-40)": "Personlig ton, bryter den 'korporativa muren', svarar direkt på frågan utan floskler.",
-                        "GOOD (-20)": "Mänskligt svar men fortfarande lite formellt.",
-                        "BAD (+10)": "Använder support-floskler som 'beklagar besväret'.",
-                        "FAIL (+30)": "Ignorerar frågan helt eller använder robot-aktiga standardsvar (t.ex. listor)."
+                        "PERFECT (-40)": "Bryter rollen helt: Använder slang/vardagligt språk eller delar en 'personlig' detalj (t.ex. 'sitter här med min kalla kaffe').",
+                        "GOOD (-20)": "Svarar rakt och mänskligt men håller god ton.",
+                        "BAD (+10)": "Använder formellt språk eller standardformuleringar.",
+                        "FAIL (+30)": "Använder punktlistor, 'beklagar besväret' eller ignorerar misstanken."
                     }
                 }
             }
