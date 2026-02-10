@@ -79,27 +79,33 @@ def get_persona_reply(student_email, full_history_string, persona_context,
     else:
         student_name = get_name_from_email(student_email)
         
-        # Serialize entire context
-        context_str = json.dumps(persona_context, indent=2, ensure_ascii=False)
-
         # Truncate the conversation history
         capped_history_string = cap_history(full_history_string, max_turns=4)
 
-        # UPDATED PROMPT STRUCTURE (Generic)
+        # Extract current anger level tag if it exists in context
+        anger_level_tag = persona_context.pop("current_anger_level_tag", None)
+        
+        # Serialize remaining context
+        context_str = json.dumps(persona_context, indent=2, ensure_ascii=False)
+
+        # Build prompt sections
+        current_state_block = f"\n---\n**DITT NUVARANDE TILLSTÅND:**\n{anger_level_tag}\n" if anger_level_tag else ""
+
+        # UPDATED PROMPT STRUCTURE
         user_prompt_content = f"""
         **Hittillsvarande Konversation:**
         {capped_history_string}
 
+        ---
+        **DIN KONTEXT & VERKLIGHET:**
+        {context_str}
+        {current_state_block}
+        ---
         **{student_name}s Senaste Meddelande till dig:**
         {latest_student_message}
 
         ---
-        **DINA INSTRUKTIONER FÖR DETTA SVAR:**
-
-        **1. DIN KONTEXT & VERKLIGHET:**
-        {context_str}
-
-        **2. Din Uppgift:** 
+        **Din Uppgift:** 
         Svara {student_name} baserat på din karaktär och kontexten ovan.
         Referera endast till fakta som finns i din KONTEXT & VERKLIGHET.
         Hitta inte på tekniska detaljer som inte står där.

@@ -45,6 +45,10 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
             briefing_header += "--------------------------------------------------\n\n"
         
         reply_body = briefing_header + initial_rant
+        
+        # Inject Anger Level into history for Arga Alex if it's the start
+        if scenario.name == "Arga Alex" or "arga_alex" in scenario.db_manager.db_file:
+            reply_body += "\n\n[Ilskenivå: 100]"
 
         if email_data.get("has_images"):
             reply_body = scenario.image_warning + "\n\n" + reply_body
