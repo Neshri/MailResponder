@@ -43,28 +43,50 @@ def verify():
         args, kwargs = mock_chat.call_args
         messages = kwargs.get('messages')
         
+        system_message = messages[0]['content']
         user_message = messages[1]['content']
-        print("\n--- GENERATED USER PROMPT ---")
+        
+        print("\n--- GENERATED SYSTEM PROMPT ---")
+        print(system_message)
+        print("--- GENERATED USER PROMPT ---")
         print(user_message)
-        print("--- END OF PROMPT ---\n")
+        print("--- END OF PROMPTS ---\n")
         
-        # Assertions
-        assert "**Hittillsvarande Konversation:**" in user_message
+        # Assertions for Arga Alex
+        assert "DIN NUVARANDE SINNESSTÄMNING: [Ilskenivå: 100]" in system_message
         assert "**DIN KONTEXT & VERKLIGHET:**" in user_message
-        assert "**DITT NUVARANDE TILLSTÅND:**" in user_message
-        assert "[Ilskenivå: 100]" in user_message
-        assert f"**{get_name_from_email(student_email)}s Senaste Meddelande till dig:**" in user_message
-        assert "Din Uppgift:" in user_message
+        assert "**DITT NUVARANDE TILLSTÅND:**" not in user_message # Should be in system now
         
-        # Check order
+        # Order check for user prompt
         history_pos = user_message.find("**Hittillsvarande Konversation:**")
         context_pos = user_message.find("**DIN KONTEXT & VERKLIGHET:**")
-        anger_pos = user_message.find("**DITT NUVARANDE TILLSTÅND:**")
         message_pos = user_message.find(f"**{get_name_from_email(student_email)}s Senaste Meddelande till dig:**")
         task_pos = user_message.find("**Din Uppgift:**")
         
-        assert history_pos < context_pos < anger_pos < message_pos < task_pos
-        print("Success: Arga Alex prompt structure follows the specified order.")
+        assert history_pos < context_pos < message_pos < task_pos
+        print("Success: Arga Alex prompt structure followed.")
+
+    print("\n--- VERIFYING TAG STRIPPING (HALLUCINATION PREVENTION) ---")
+    with patch('response_generator.chat_with_model') as mock_chat, \
+         patch('response_generator.PERSONA_MODEL', 'mock-model'):
+        # Mock returns a response with a hallucinated tag
+        mock_chat.return_value = "Okej Anna, jag fattar. [Ilskenivå: 115]"
+        
+        reply = get_persona_reply(
+            student_email,
+            full_history_string,
+            persona_context,
+            latest_student_message,
+            0,
+            "[EJ_LÖST]",
+            system_prompt="Du är Alex"
+        )
+        
+        print(f"Raw reply: 'Okej Anna, jag fattar. [Ilskenivå: 115]'")
+        print(f"Cleaned reply: '{reply}'")
+        assert "[Ilskenivå: 115]" not in reply
+        assert "Okej Anna, jag fattar." in reply
+        print("Success: Hallucinated tags are stripped.")
 
     print("\n--- VERIFYING ULLA (NO ANGER LEVEL) ---")
     persona_context_ulla = {

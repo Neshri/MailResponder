@@ -60,7 +60,14 @@ def get_persona_reply(student_email, full_history_string, persona_context,
 
     logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
+    # Extract current anger level tag if it exists in context
+    anger_level_tag = persona_context.pop("current_anger_level_tag", None)
+    
     system_prompt_content = system_prompt if system_prompt else "Du är en hjälpsam assistent."
+    
+    # Inject mood into system prompt if present to separate it from conversation history
+    if anger_level_tag:
+        system_prompt_content += f"\n\nDIN NUVARANDE SINNESSTÄMNING: {anger_level_tag}"
 
     if evaluator_decision_marker == "[LÖST]":
         # SUCCESS STATE - Can also be generalized if needed, but keeping simple for now
@@ -82,16 +89,10 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         # Truncate the conversation history
         capped_history_string = cap_history(full_history_string, max_turns=4)
 
-        # Extract current anger level tag if it exists in context
-        anger_level_tag = persona_context.pop("current_anger_level_tag", None)
-        
         # Serialize remaining context
         context_str = json.dumps(persona_context, indent=2, ensure_ascii=False)
 
-        # Build prompt sections
-        current_state_block = f"\n---\n**DITT NUVARANDE TILLSTÅND:**\n{anger_level_tag}\n" if anger_level_tag else ""
-
-        # UPDATED PROMPT STRUCTURE
+        # UPDATED PROMPT STRUCTURE (Clean and context-focused)
         user_prompt_content = f"""
         **Hittillsvarande Konversation:**
         {capped_history_string}
@@ -99,7 +100,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         ---
         **DIN KONTEXT & VERKLIGHET:**
         {context_str}
-        {current_state_block}
+
         ---
         **{student_name}s Senaste Meddelande till dig:**
         {latest_student_message}
@@ -129,6 +130,9 @@ def get_persona_reply(student_email, full_history_string, persona_context,
 
         persona_svar = response.strip()
         persona_svar = re.sub(r"<think>.*?</think>", "", persona_svar, flags=re.DOTALL).strip()
+        
+        # STRICT CLEANING: Remove any hallucinated state tags
+        persona_svar = re.sub(r"\[Ilskenivå:.*?\]", "", persona_svar).strip()
         
         # Clean up common LLM artifacts
         artifacts_to_strip = [

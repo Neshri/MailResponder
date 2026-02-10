@@ -113,6 +113,10 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     
     # Update Anger Level if applicable
     if "anger_level" in track_metadata:
+        # Safety: Default to 100 if missing or invalid (for old sessions)
+        if track_metadata.get("anger_level") is None:
+            track_metadata["anger_level"] = 100
+            
         track_metadata["anger_level"] += score_adjustment
         logging.info(f"LLM-tråd ({student_email}): Ilskenivå justerad med {score_adjustment}. Ny nivå: {track_metadata['anger_level']}")
 
