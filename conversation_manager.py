@@ -1,5 +1,6 @@
 import logging
 import random
+import re
 from graph_api import graph_send_email
 from evaluator import get_evaluator_decision
 from response_generator import get_persona_reply
@@ -32,7 +33,7 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
     if scenario.name == "Arga Alex" or "arga_alex" in scenario.db_manager.db_file:
         track_metadata = {"anger_level": 100}
 
-    if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata):
+    if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata, persona_name=scenario.persona_name):
         reply_subject = email_data["subject"]
         initial_rant = problem['start_prompt']
         briefing_header = ""
@@ -91,8 +92,10 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     # Default scenarios (like Ulla) should only see the latest message to avoid confusion.
     eval_history_context = None
     if scenario.name.lower() == "arga alex" or "arga_alex" in scenario.db_manager.db_file:
-        history_entries = [e.strip() for e in full_history_string.split("\n\n") if e.strip()]
-        eval_history_context = "\n\n".join(history_entries[-6:]) if history_entries else ""
+        # Use regex to split history into individual messages (looking for "Name: ")
+        history_entries = [e.strip() for e in re.split(r'\n+(?=\S+:\s)', full_history_string.strip()) if e.strip()]
+        # Increase history context to 12 messages (6 turns) for the evaluator in this scenario
+        eval_history_context = "\n\n".join(history_entries[-12:]) if history_entries else ""
 
     evaluator_marker, evaluator_raw_response, score_adjustment = get_evaluator_decision(
         student_email,

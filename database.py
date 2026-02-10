@@ -150,8 +150,8 @@ class DatabaseManager:
             logging.error(f"Failed to set track: {e}")
             return False
 
-    def set_active_problem(self, student_email, problem, problem_level_idx, graph_conversation_id, track_metadata=None):
-        history = f"Ulla: {problem['start_prompt']}\n\n"
+    def set_active_problem(self, student_email, problem, problem_level_idx, graph_conversation_id, track_metadata=None, persona_name="Ulla"):
+        history = f"{persona_name}: {problem['start_prompt']}\n\n"
         metadata_json = json.dumps(track_metadata) if track_metadata else "{}"
         try:
             with self.get_connection(self.db_file) as conn:
