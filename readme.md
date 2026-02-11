@@ -1,62 +1,67 @@
-# Ulla - AI Support Training Bot
+# MailResponder - Multi-Scenario AI Training Platform
 
-Ulla is an automated, AI-driven training bot designed to simulate realistic IT support conversations. It operates entirely over email, where it plays the role of "Ulla," a friendly but non-technical elderly Swedish woman experiencing various computer problems.
+MailResponder is an automated, AI-driven training platform designed to simulate realistic IT support and customer interaction conversations. It operates entirely over email, serving as a versatile environment for students to practice diagnostic, communication, and problem-solving skills across various scenarios.
 
-The system is built to help IT support students practice their diagnostic, communication, and problem-solving skills in a controlled environment. Students progress through 5 difficulty levels (L1-L5) with automatic unlocks based on successful problem solving.
+The system is highly extensible, allowing for the creation of diverse "personas" and problem sets. Students progress through difficulty levels with automatic unlocks based on successful problem solving, while instructors can monitor progress via detailed analysis tools.
 
 ## Features
 
 -   **Email-Based Interaction:** Communicates using the Microsoft Graph API to send and receive real emails.
--   **Progressive Learning System:** 5 difficulty levels (L1-L5) with automatic progression based on successful problem solving.
--   **Swedish Localization:** Ulla persona responds in Swedish with accessibility-focused communication patterns.
--   **Multi-Database Architecture:**
-    - **Progress Tracking:** SQLite database (`conversations.db`) tracks student progress and active conversations
-    - **Conversation Archiving:** Completed conversations saved to separate archive database
-    - **Debug Database:** Full AI conversation histories with evaluator responses for analysis
+-   **Multi-Scenario Architecture:** 
+    - Supports multiple independent training scenarios simultaneously.
+    - Each scenario has its own persona, problem set, and configuration.
+    - Emails are dynamically routed to scenarios based on the target mailbox.
+-   **Progressive Learning System:** Configurable difficulty levels (e.g., L1-L5) per scenario with automatic progression.
+-   **Dynamic Persona Simulation:** Personas respond in character, localized to specific languages (e.g., Swedish) and communication patterns.
+-   **Isolated Databases per Scenario:**
+    - **Progress Tracking:** Tracks student progress and active conversations.
+    - **Conversation Archiving:** Saves completed conversations to an archive.
+    - **Debug Logging:** Full AI conversation histories and evaluator responses for analysis.
 -   **Advanced Email Processing:**
     - Intelligent reply detection and conversation threading.
     - Email content cleaning and HTML parsing.
     - **Image Detection:** Automatically detects attachments and inline/copy-pasted images.
-    - **Image Warnings:** Prepends a configurable accessibility warning to Ulla's replies if images are detected.
--   **Dual-LLM Architecture:**
-    -   **Evaluator AI:** Strict logical model that determines if solutions correctly solve problems.
-    -   **Persona AI:** Creative model simulating Ulla's conversational responses, now including awareness of images she cannot see.
--   **Multi-User Support:** Handles multiple students simultaneously with conversation persistence.
--   **Race Condition Prevention:** Advanced concurrency management for reliable email processing.
--   **Analysis Tools:** Comprehensive debugging and conversation analysis via the `db_inspector.py` utility.
--   **Highly Configurable:** Problems, personas, and difficulty levels customizable per scenario.
--   **Test Suite:** Built-in testing utilities for system validation and troubleshooting.
+    - **Accessibility Warning:** Prepends configurable warnings to persona replies if images are detected.
+-   **Dual-LLM Orchestration:**
+    -   **Evaluator AI:** A logical model (e.g., gemma3) that determines if solutions correctly solve problems.
+    -   **Persona AI:** A creative model that simulates the scenario's persona, aware of the evaluator's verdict and conversation context.
+-   **Multi-User & Race Condition Prevention:** Handles multiple students simultaneously with robust concurrency management.
+-   **Analysis Tools:** Comprehensive debugging via the `db_inspector.py` utility.
 
 ## How It Works
 
-The system operates in a loop, checking an email inbox for new messages. When a message from a student is found, it triggers the following sequence:
+The system operates in a background loop, continuously checking one or more email inboxes defined in the active scenarios. When a message is received, the `ScenarioManager` routes it to the correct context, triggering the following lifecycle:
 
-```
-+----------------+      1. Student sends email      +---------------------+
-| Student's M365 | -------------------------------> |   Bot's M365 Inbox  |
-+----------------+                                  +----------+----------+
-                                                               | 2. Script fetches email
-                                                               v
-+------------------+     3. Check DB for active problem     +------------------+
-| conversations.db | <------------------------------------- | MailResponder.py |
-+------------------+                                        |  (Core Logic)  |
-                           4. Is solution correct?           +------+---------+
-                                                               |    |
-+------------------+      5. Get verdict: [LÖST]/[EJ_LÖST]     |    | 6. Generate reply
-|  Evaluator LLM   | <-----------------------------------------+    |    based on verdict
-+------------------+                                               |
-                                                                    v
-+------------------+    7. Get Ulla's response text      +-------------+
-|   Persona LLM    | <---------------------------------- | Persona AI  |
-+------------------+                                     +-------------+
-                                                                    | 8. Script sends reply
-                                                                    v
-+----------------+      9. Student receives Ulla's reply      +---------------------+
-| Student's M365 | <----------------------------------------- |   Bot's M365 Inbox  |
-+----------------+                                            +---------------------+
+```mermaid
+graph TD
+    A[Student sends email] --> B[Bot's M365 Inbox]
+    B --> C[MailResponder.py]
+    C --> D[ScenarioManager]
+    D -- "Context: Scenario A" --> E[Email Processor]
+    D -- "Context: Scenario B" --> E
+    E --> F{Check DB: Active Problem?}
+    
+    F -- No --> G[Classify as Start Phrase?]
+    G -- Yes --> H[Initialize New Problem]
+    G -- No --> I[Send Error/Info Reply]
+    
+    F -- Yes --> J[Extract Student Message]
+    J --> K[Evaluator LLM]
+    K --> L{Is Solution Correct?}
+    
+    L --> M[Persona LLM]
+    M --> N[Generate Reply based on Verdict]
+    N --> O[Update DB & Archive if Solved]
+    O --> P[Send Reply via Graph API]
+    P --> A
 ```
 
-Once a problem is successfully solved, the entire conversation transcript is saved to an archive database (`completed_conversations.db`), and the active problem is cleared for that student, allowing them to start a new one.
+1.  **Scenario Discovery:** `ScenarioManager` loads all enabled scenarios from the `scenarios/` directory.
+2.  **Email Polling:** `MailResponder.py` iterates through scenarios and fetches unread emails for each configured mailbox.
+3.  **Contextual Processing:** `email_processor.py` filters noise and classifies the action (Start Problem vs. Continue Conversation).
+4.  **Evaluation:** `evaluator.py` uses an LLM to judge the student's message against the problem's solution criteria.
+5.  **Persona Generation:** `response_generator.py` creates a character-appropriate response based on the evaluation outcome.
+6.  **Persistence:** Conversation history and progress are updated in the scenario-specific SQLite databases.
 
 ## Setup and Installation
 
@@ -126,10 +131,12 @@ This bot requires access to a mailbox via the Microsoft Graph API. This is the m
 14. Click **Add permissions**.
 15. **Crucially**, grant admin consent by clicking the **Grant admin consent for [Your Tenant]** button and confirming. The status for the permissions must change to "Granted".
 
-### Step 5: Configure Environment Variables
+### Step 5: Configure Scenario Environment Variables
 
-1.  Create a file named `.env` in the root of the project directory.
-2.  Copy the following template into it and fill it out with your credentials and configuration.
+The system supports per-scenario configuration. For each scenario you wish to activate (e.g., `scenarios/example_scenario/`):
+
+1.  Create a file named `.env` **inside the specific scenario directory**.
+2.  Copy the following template and fill it out with credentials matching that scenario's target mailbox.
 
 ```dotenv
 # --- Azure AD App Registration Credentials ---
@@ -137,20 +144,16 @@ AZURE_CLIENT_ID="<Your-Application-Client-ID-from-Azure>"
 AZURE_TENANT_ID="<Your-Directory-Tenant-ID-from-Azure>"
 AZURE_CLIENT_SECRET="<Your-Client-Secret-Value-from-Azure>"
 
-# --- Target Mailbox ---
-# The email address of the M365 account the bot will use to send and receive mail.
-# The Azure App must have permissions over this mailbox.
-BOT_EMAIL_ADDRESS="ulla.bot@yourdomain.com"
+# --- Target Mailbox (Scenario Specific) ---
+BOT_EMAIL_ADDRESS="persona.name@yourdomain.com"
 
 # --- LLM Model Configuration ---
-# Models must be available in your Ollama instance. Use the exact tag you have pulled.
 PERSONA_MODEL="gemma3:12b-it-qat"
 EVAL_MODEL="gemma3:12b-it-qat"
-
-# --- Ollama Host (Optional) ---
-# Uncomment and set if Ollama is running on a different machine.
-# OLLAMA_HOST="http://192.168.1.100:11434"
 ```
+
+> [!NOTE]
+> Values in the scenario's `.env` or `config.json` will override any global environment variables.
 
 ## Usage
 
@@ -205,59 +208,55 @@ python MailResponder.py &
 ```
 .
 ├── MailResponder.py          # Main application entry point (background loop)
-├── db_inspector.py           # CLI tool for database analysis and debugging
-├── config.py                 # Configuration management for environment variables
-├── database.py               # SQLite database operations and schema management
-├── email_parser.py           # Advanced email parsing, reply detection, and image detection
-├── email_processor.py        # Main orchestration logic and email processing
-├── response_generator.py     # AI-powered response generation with persona simulation
-├── evaluator.py              # Problem evaluation and solution verification
-├── conversation_manager.py   # Conversation flow and state management
-├── scenario_manager.py       # Manages multiple scenarios and their configurations
-├── graph_api.py              # Microsoft Graph API integration for email
-├── llm_client.py             # LLM API client for Ollama integration
-├── prompts.py                # Global fallback LLM system prompts
+├── scenario_manager.py       # Core: Manages discovery and loading of scenarios
+├── email_processor.py        # Orchestration: Routes emails to the correct scenario context
+├── conversation_manager.py   # Logic: Manages conversation flow, state, and evaluation tasks
+├── response_generator.py     # AI: Generates persona-specific replies
+├── evaluator.py              # AI: Logic for judging student solutions and adjusting scores
+├── email_parser.py           # Utility: Extracts clean text and detects images from emails
+├── database.py               # Data: SQLite operations and schema management
+├── db_inspector.py           # Tools: CLI for monitoring progress and debugging AI thought
+├── graph_api.py              # API: Microsoft Graph integration for M365 mailboxes
+├── config.py                 # Config: Central environment variable management
+├── llm_client.py             # Client: Ollama API integration wrapper
 ├── scenarios/                # Directory containing specific training scenarios
-│   └── ulla_support/         # Example: Classic Ulla Tech Support scenario
-│       ├── config.json       # Scenario-specific DB prefix, email, etc.
-│       ├── problems.json     # The problem catalog and start phrases for this scenario
-│       └── ulla_conversations.db # Databases are stored per-scenario
-├── requirements.txt          # Python dependencies list
-├── conversations.db          # SQLite database for tracking student progress
-├── completed_conversations.db  # Archive database for completed conversations
-├── debug_conversations.db    # Debug database with full AI responses
-├── example.env               # Environment configuration template
-├── .env                      # Holds all secrets and configuration (git-ignored)
+│   └── example_scenario/     # A self-contained scenario folder
+│       ├── config.json       # Scenario metadata, email, and model selection
+│       ├── problems.json     # Catalog of problems, start phrases, and solution keys
+│       ├── persona_prompt.txt # System prompt defining the persona's character
+│       ├── evaluator_prompt.txt # System prompt defining evaluation rules
+│       ├── .env              # Scenario-specific secrets (M365 credentials, etc.)
+│       └── [prefix]_conversations.db # Auto-generated databases for this scenario
+├── requirements.txt          # Python dependencies
+└── example.env               # Global environment configuration template (root)
 ```
 
 ## Configuration and Extension
 
-The system is designed for easy customization across multiple configuration files:
+The system is designed to be extended by adding new scenario folders to the `scenarios/` directory. Each folder is a self-contained training module.
 
-### `prompts.py`
-The core of the simulation's content resides in this file. To extend the training:
+### 1. Create Scenario Configuration (`config.json`)
+Define the scenario's behavior, target mailbox, and specific LLM models:
+```json
+{
+  "scenario_name": "Technical Support",
+  "persona_name": "Kim",
+  "db_prefix": "tech_support",
+  "target_email": "kim.support@domain.com",
+  "persona_model": "gemma3:12b",
+  "eval_model": "gemma3:12b",
+  "image_warning_message": "Kim confirms they cannot see images."
+}
+```
 
--   **Add New Problems:** Add new problem dictionaries to the `PROBLEM_CATALOGUES` list. Follow the existing structure.
--   **Add New Levels:** Add a new `START_PHRASES` entry and a corresponding list of problems in `PROBLEM_CATALOGUES`.
--   **Change Persona:** Modify the `ULLA_PERSONA_PROMPT` or `EVALUATOR_SYSTEM_PROMPT` to alter the behavior of the AIs.
+### 2. Define Problems (`problems.json`)
+Structure your training into levels. Each level is unlocked when a problem from the previous level is solved:
+- **`start_phrases`**: An array of phrases that students email to start a specific level.
+- **`catalog`**: An array of levels, each containing a list of potential problems.
 
-### `config.py`
-Centralized configuration management:
+### 3. Author Prompts
+- **`persona_prompt.txt`**: Define the character, tone, and communication style.
+- **`evaluator_prompt.txt`**: Define the criteria for a "solved" problem. The evaluator should output `[LÖST]` when the student provides the correct solution.
 
--   **Database Settings:** Configure database paths and schemas
--   **API Integration:** Manage Microsoft Graph API and LLM API endpoints
--   **Environment Variables:** Load and validate configuration from `.env` file
-
-### `problem_catalog.py`
-Problem validation and management:
-
--   **Validate Problem Structure:** Ensure problems meet required format
--   **Manage Difficulty Levels:** Define level progression and unlocking criteria
--   **Problem Templates:** Standardize problem creation patterns
-
-### Database Schema Customization
-Modify database operations in `database.py` to:
-
--   Add new tracking metrics for student progress
--   Extend conversation history with additional metadata
--   Implement custom analysis queries for instructor insights
+### 4. Advanced: Score Tracking
+Scenarios like "Arga Alex" use the `[SCORE: +/-X]` mechanic in the evaluator prompt to track state (e.g., anger level) across multiple turns. The scenario clears only when the score reaches a specific threshold and the evaluator returns `[LÖST]`.
