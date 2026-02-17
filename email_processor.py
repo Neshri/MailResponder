@@ -222,7 +222,7 @@ def _classify_email_action(email_data, scenario):
         full_body = email_data["cleaned_body"]
         if not full_body.strip(): full_body = email_data.get('body_preview') or ""
         
-        msg_content = extract_student_message_from_reply(full_body, active_hist_str)
+        msg_content = extract_student_message_from_reply(full_body, active_hist_str, persona_email=scenario.target_email)
         if not msg_content:
             logging.warning(f"Classify: Empty body from {sender}. Ignoring.")
             return {'type': 'ignore', 'data': email_data}

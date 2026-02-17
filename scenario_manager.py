@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Tuple
 from database import DatabaseManager
+from scenario_handlers import BaseScenarioHandler, ArgaAlexHandler
 
 from dotenv import load_dotenv
 import config as global_config
@@ -23,6 +24,7 @@ class Scenario:
     image_warning: str
     persona_prompt: str
     evaluator_prompt: str
+    handler: BaseScenarioHandler
 
     def get_problem_by_id(self, problem_id: str) -> Tuple[Optional[Dict], int]:
         for level_idx, level_catalogue in enumerate(self.problems):
@@ -129,7 +131,8 @@ class ScenarioManager:
                 start_phrases=problems_data.get("start_phrases", []),
                 image_warning=config.get("image_warning_message", ""),
                 persona_prompt=persona_prompt,
-                evaluator_prompt=evaluator_prompt
+                evaluator_prompt=evaluator_prompt,
+                handler=self._get_handler(config.get("scenario_name", "Unknown"))
             )
             
             self.scenarios.append(scenario)
@@ -137,6 +140,12 @@ class ScenarioManager:
 
         except Exception as e:
             logging.error(f"Failed to load scenario from {dir_path}: {e}")
+
+    def _get_handler(self, scenario_name: str) -> BaseScenarioHandler:
+        """Returns the appropriate handler for the scenario."""
+        if scenario_name == "Arga Alex":
+            return ArgaAlexHandler(scenario_name)
+        return BaseScenarioHandler(scenario_name)
 
     def get_scenarios(self) -> List[Scenario]:
         return self.scenarios

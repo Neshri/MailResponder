@@ -29,6 +29,11 @@ class TestCoreSimulation(unittest.TestCase):
             patch('email_processor.mark_email_as_read'),
             patch('conversation_manager.graph_send_email', return_value=True),
             patch('llm_client.ollama'),
+            # Patch config and model names to avoid "Model not set" errors
+            patch('config.PERSONA_MODEL', 'mock-model'),
+            patch('config.EVAL_MODEL', 'mock-model'),
+            patch('response_generator.PERSONA_MODEL', 'mock-model'),
+            patch('evaluator.EVAL_MODEL', 'mock-model'),
             # Patch random.choice to always pick the first problem (determinism)
             patch('conversation_manager.random.choice', side_effect=lambda x: x[0]),
         ]
@@ -43,6 +48,7 @@ class TestCoreSimulation(unittest.TestCase):
         
         # 4. Create Mock Scenario
         from scenario_manager import Scenario
+        from scenario_handlers import BaseScenarioHandler
         
         self.mock_problem = {
             "id": "L1_P001",
@@ -68,7 +74,8 @@ class TestCoreSimulation(unittest.TestCase):
             start_phrases=["starta övning"],
             image_warning="IMG WARN",
             persona_prompt="System Prompt",
-            evaluator_prompt="Eval Prompt"
+            evaluator_prompt="Eval Prompt",
+            handler=BaseScenarioHandler("Test Scenario")
         )
         
     def tearDown(self):
@@ -139,8 +146,12 @@ class TestCoreSimulation(unittest.TestCase):
 
         # 3. Mock LLM Responses
         def llm_side_effect(model, messages, **kwargs):
-            system_prompt = messages[0]['content']
-            if "evaluator_prompt" in str(messages) or "Eval Prompt" in system_prompt: # Check against our mock prompt
+            full_content = str(messages)
+            # Differentiate between evaluator and persona
+            if "Eval Prompt" in full_content:
+                # For test_03 specifically, look for the solution keyword
+                if "Windows Update" in full_content:
+                    return MockOllamaResponse("[LÖST]")
                 return MockOllamaResponse("[EJ_LÖST]")
             else:
                 return MockOllamaResponse("Har du kollat den blå sladden?")
@@ -175,9 +186,11 @@ class TestCoreSimulation(unittest.TestCase):
 
         # 3. Mock LLM: Evaluator says [LÖST]
         def llm_side_effect(model, messages, **kwargs):
-            system_prompt = messages[0]['content']
-            if "Eval Prompt" in system_prompt:
-                return MockOllamaResponse("[LÖST]")
+            full_content = str(messages)
+            if "Eval Prompt" in full_content:
+                if "Windows Update" in full_content:
+                     return MockOllamaResponse("[LÖST]")
+                return MockOllamaResponse("[EJ_LÖST]")
             return MockOllamaResponse("Bra jobbat!") 
         mock_ollama.chat.side_effect = llm_side_effect
 

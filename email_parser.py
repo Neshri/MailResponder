@@ -88,6 +88,8 @@ def get_name_from_email(email):
         # Replace dots or other common separators with a space
         name_part = name_part.replace('.', ' ').replace('_', ' ')
         first_name = name_part.split(' ')[0]
+        if not first_name:
+            return "Support"
         return first_name.capitalize()
     except Exception:
         return "Support" # Fallback to the old label if anything goes wrong
@@ -144,24 +146,27 @@ def parse_graph_email_item(msg_graph_item):
     logging.debug(f"Parsed email: ID={email_data['graph_msg_id']}, From={email_data['sender_email']}, Time={email_data['received_datetime']}")
     return email_data
 
-def extract_student_message_from_reply(full_body, active_hist_str):
+def extract_student_message_from_reply(full_body, active_hist_str=None, persona_email=None):
     """
     Extracts only the new student message content from a reply email, excluding quoted replies.
     """
     if not full_body.strip():
         return ""
 
-    # Look for the pattern where previous Ulla messages start (usually with date headers)
+    # Look for the pattern where previous persona messages start (usually with date headers)
     lines = full_body.split('\n')
     extracted_content = []
     found_reply_marker = False
 
+    persona_email_pattern = persona_email.lower() if persona_email else None
+
     for line in lines:
+        line_lower = line.strip().lower()
         # Look for date headers that indicate start of quoted content
-        if re.search(r'^\s*(den|on)\s+\d{1,2}\s+\w{3}\s+\d{4}', line.lower()) or \
+        if re.search(r'^\s*(den|on)\s+\d{1,2}\s+\w{3}\s+\d{4}', line_lower) or \
            re.search(r'^\s*\d{4}-\d{2}-\d{2}', line) or \
            re.search(r'^\s*\w{3}\s+\d{1,2}', line) or \
-           (line.strip().lower().startswith('ulla@') and 'skrev:' in line.lower()):
+           (persona_email_pattern and persona_email_pattern in line_lower and 'skrev:' in line_lower):
             found_reply_marker = True
             break
         extracted_content.append(line)

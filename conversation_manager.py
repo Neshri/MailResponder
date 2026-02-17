@@ -30,8 +30,7 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
     
     # Initialize Track Metadata if needed
     track_metadata = {}
-    if scenario.name == "Arga Alex" or "arga_alex" in scenario.db_manager.db_file:
-        track_metadata = {"anger_level": 100}
+    scenario.handler.on_start_problem(problem, track_metadata)
 
     if scenario.db_manager.set_active_problem(email_data["sender_email"], problem, student_next_eligible_level_idx, email_data["graph_conversation_id_incoming"], track_metadata=track_metadata, persona_name=scenario.persona_name):
         reply_subject = email_data["subject"]
@@ -46,9 +45,8 @@ def handle_start_new_problem_main_thread(email_data, student_next_eligible_level
         
         reply_body = briefing_header + initial_rant
         
-        # Inject Anger Level into history for Arga Alex if it's the start
-        if scenario.name == "Arga Alex" or "arga_alex" in scenario.db_manager.db_file:
-            reply_body += "\n\n[Ilskenivå: 100]"
+        # Scenario-specific modification (e.g., inject anger level)
+        reply_body = scenario.handler.modify_start_email_body(reply_body, track_metadata)
 
         if email_data.get("has_images"):
             reply_body = scenario.image_warning + "\n\n" + reply_body
@@ -93,13 +91,7 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         }
 
     # Pass history context ONLY for scenarios that need it (e.g., de-escalation/trend analysis)
-    # Default scenarios (like Ulla) should only see the latest message to avoid confusion.
-    eval_history_context = None
-    if scenario.name.lower() == "arga alex" or "arga_alex" in scenario.db_manager.db_file:
-        # Use regex to split history into individual messages (looking for "Name: ")
-        history_entries = [e.strip() for e in re.split(r'\n+(?=\S+:\s)', full_history_string.strip()) if e.strip()]
-        # Increase history context to 12 messages (6 turns) for the evaluator in this scenario
-        eval_history_context = "\n\n".join(history_entries[-12:]) if history_entries else ""
+    eval_history_context = scenario.handler.get_eval_history_context(full_history_string, track_metadata)
 
     evaluator_marker, evaluator_raw_response, score_adjustment = get_evaluator_decision(
         student_email,
@@ -111,34 +103,17 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         history_string=eval_history_context
     )
     
-    # Update Anger Level if applicable
-    if "anger_level" in track_metadata:
-        # Safety: Default to 100 if missing or invalid (for old sessions)
-        if track_metadata.get("anger_level") is None:
-            track_metadata["anger_level"] = 100
-            
-        track_metadata["anger_level"] += score_adjustment
-        logging.info(f"LLM-tråd ({student_email}): Ilskenivå justerad med {score_adjustment}. Ny nivå: {track_metadata['anger_level']}")
+    # Update state via handler if applicable
+    scenario.handler.on_evaluator_result(student_email, score_adjustment, track_metadata)
 
     # Store the raw evaluator response in the debug log
     scenario.db_manager.add_debug_evaluator_response(student_email, problem_info_id, evaluator_raw_response)
     
     is_solved_by_evaluator = (evaluator_marker == "[LÖST]")
     
-    # Safety Override: Arga Alex scenario cannot be solved if anger level is still high
-    # NEW: Also allow completion if anger reaches 0 with a good score, even if string marker is [EJ_LÖST]
-    if (scenario.name.lower() == "arga alex" or "arga_alex" in scenario.db_manager.db_file):
-        current_anger = track_metadata.get("anger_level", 100)
-        
-        if is_solved_by_evaluator and current_anger > 10:
-             logging.info(f"LLM-tråd ({student_email}): Överskrider evaluatorns [LÖST] - Ilskenivå {current_anger} är för hög (>10).")
-             is_solved_by_evaluator = False
-             evaluator_marker = "[EJ_LÖST]" # Update marker for persona generator too
-        
-        elif not is_solved_by_evaluator and current_anger <= 0 and score_adjustment <= -10:
-             logging.info(f"LLM-tråd ({student_email}): Uppgraderar till [LÖST] – ilskenivå har nått noll via poängjustering.")
-             is_solved_by_evaluator = True
-             evaluator_marker = "[LÖST]"
+    # Scenario-specific solve logic (e.g., Arga Alex rejection/upgrade)
+    is_solved_by_evaluator = scenario.handler.is_problem_solved(is_solved_by_evaluator, track_metadata, score_adjustment, student_email)
+    evaluator_marker = "[LÖST]" if is_solved_by_evaluator else "[EJ_LÖST]"
 
     # 2. Generate Reply
     context_enhanced_history = full_history_string
@@ -151,9 +126,8 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
             "technical_facts": problem_info.get('tekniska_fakta', {})
         }
     
-    # Inject Anger Level into context for the persona to see
-    if "anger_level" in track_metadata:
-        persona_context["current_anger_level_tag"] = f"[Ilskenivå: {track_metadata['anger_level']}]"
+    # Inject Anger Level into context via handler
+    scenario.handler.modify_persona_context(persona_context, track_metadata)
     
     ulla_final_reply_text = get_persona_reply(
         student_email,
@@ -166,10 +140,8 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         has_images=email_data_for_result.get("has_images", False)
     )
 
-    # Append Anger Level to the reply if active
-    if scenario.name.lower() == "arga alex" and ulla_final_reply_text:
-        current_anger = track_metadata.get("anger_level", 100)
-        ulla_final_reply_text += f"\n\n[Ilskenivå: {current_anger}]"
+    # Scenario-specific reply modification
+    ulla_final_reply_text = scenario.handler.modify_persona_reply(ulla_final_reply_text, track_metadata)
 
     result_package = {
         "email_data": email_data_for_result,
@@ -204,15 +176,14 @@ def process_completed_problem(result_package, email_data, scenario):
     """
     is_solved = result_package["is_solved"]
     
-    # Check for Fail State (Anger > 200)
-    anger_level = result_package.get("new_track_metadata", {}).get("anger_level", 0)
-    is_failed = (anger_level >= 200)
+    # Check for Fail State via handler
+    track_metadata = result_package.get("new_track_metadata", {})
+    is_failed, fail_msg = scenario.handler.check_failure_state(track_metadata)
 
     if is_failed:
          result_package["is_solved"] = False # Ensure it counts as a fail
-         fail_msg = "\n\n[SYSTEM: KONTAKTEN BRUTEN] Kunden har nått en nivå av raseri där de inte längre går att kommunicera med. Du har MISSLYCKATS med de-eskaleringen. Övningen avbryts."
          result_package["ulla_final_reply_body"] += fail_msg
-         logging.warning(f"Main: Student {email_data['sender_email']} misslyckades (Ilskenivå {anger_level}).")
+         logging.warning(f"Main: Student {email_data['sender_email']} misslyckades [Scenario: {scenario.name}].")
 
     if is_solved and not is_failed and "\nStartfras för nästa nivå" not in result_package["ulla_final_reply_body"] and "\nDu har klarat alla nivåer!" not in result_package["ulla_final_reply_body"]:
         active_lvl_idx = result_package["active_problem_level_idx"]
