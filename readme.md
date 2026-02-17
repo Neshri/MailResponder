@@ -10,6 +10,7 @@ The system is highly extensible, allowing for the creation of diverse "personas"
 -   **Multi-Scenario Architecture:** 
     - Supports multiple independent training scenarios simultaneously.
     - Each scenario has its own persona, problem set, and configuration.
+    - **Custom Logic Hooks:** Scenarios can implement unique mechanics (like anger levels or timers) via a modular handler system.
     - Emails are dynamically routed to scenarios based on the target mailbox.
 -   **Progressive Learning System:** Configurable difficulty levels (e.g., L1-L5) per scenario with automatic progression.
 -   **Dynamic Persona Simulation:** Personas respond in character, localized to specific languages (e.g., Swedish) and communication patterns.
@@ -197,27 +198,40 @@ python MailResponder.py &
     python db_inspector.py --list
     ```
 
--   **Ollama Connectivity Check:**
-    You can verify the connection to your Ollama instance and models by running:
-    ```bash
-    python llm_client.py
-    ```
+## Testing
+
+MailResponder includes a comprehensive, isolated test suite that runs without requiring an internet connection or live LLM access (via extensive mocking).
+
+### Running Tests
+To run all unit tests and verification scripts, use the central test runner:
+
+```bash
+python tests/run_all.py
+```
+
+The suite covers:
+- **Core Simulation**: Integration of email processing and LLM orchestration.
+- **Scenario Logic**: Testing state tracking and fail states (e.g., Arga Alex).
+- **Database**: Stability of student progress and history persistence.
+- **Email Parsing**: Reliability of reply detection and HTML cleaning.
+- **Verification**: Idempotency and prompt structure integrity.
 
 ## Project Structure
 
 ```
 .
 ├── MailResponder.py          # Main application entry point (background loop)
+├── scenario_handlers.py      # Extension: Modular hooks for scenario-specific logic
 ├── scenario_manager.py       # Core: Manages discovery and loading of scenarios
 ├── email_processor.py        # Orchestration: Routes emails to the correct scenario context
-├── conversation_manager.py   # Logic: Manages conversation flow, state, and evaluation tasks
+├── conversation_manager.py   # Logic: Manages conversation flow and state transitions
 ├── response_generator.py     # AI: Generates persona-specific replies
-├── evaluator.py              # AI: Logic for judging student solutions and adjusting scores
-├── email_parser.py           # Utility: Extracts clean text and detects images from emails
+├── evaluator.py              # AI: Logic for judging student solutions
+├── email_parser.py           # Utility: Extracts clean text (persona-agnostic)
 ├── database.py               # Data: SQLite operations and schema management
-├── db_inspector.py           # Tools: CLI for monitoring progress and debugging AI thought
-├── graph_api.py              # API: Microsoft Graph integration for M365 mailboxes
-├── config.py                 # Config: Central environment variable management
+├── db_inspector.py           # Tools: CLI for monitoring progress
+├── graph_api.py              # API: Microsoft Graph integration
+├── config.py                 # Config: Central environment management
 ├── llm_client.py             # Client: Ollama API integration wrapper
 ├── scenarios/                # Directory containing specific training scenarios
 │   └── example_scenario/     # A self-contained scenario folder
@@ -227,6 +241,8 @@ python MailResponder.py &
 │       ├── evaluator_prompt.txt # System prompt defining evaluation rules
 │       ├── .env              # Scenario-specific secrets (M365 credentials, etc.)
 │       └── [prefix]_conversations.db # Auto-generated databases for this scenario
+├── tests/                    # Comprehensive test suite and verification scripts
+│   └── run_all.py            # Central test runner
 ├── requirements.txt          # Python dependencies
 └── example.env               # Global environment configuration template (root)
 ```
@@ -258,5 +274,9 @@ Structure your training into levels. Each level is unlocked when a problem from 
 - **`persona_prompt.txt`**: Define the character, tone, and communication style.
 - **`evaluator_prompt.txt`**: Define the criteria for a "solved" problem. The evaluator should output `[LÖST]` when the student provides the correct solution.
 
-### 4. Advanced: Score Tracking
-Scenarios like "Arga Alex" use the `[SCORE: +/-X]` mechanic in the evaluator prompt to track state (e.g., anger level) across multiple turns. The scenario clears only when the score reaches a specific threshold and the evaluator returns `[LÖST]`.
+### 4. Advanced: Custom Logic (Handlers)
+For scenarios requiring complex state tracking (like "Arga Alex"), you can implement a custom handler in `scenario_handlers.py`. The system calls these hooks at specific points:
+- `on_start_problem`: Initialize scenario-specific state (e.g., set anger to 100).
+- `is_problem_solved`: Override the solver verdict based on state (e.g., reject if anger > 10).
+- `check_failure_state`: Terminate the session if failure conditions are met (e.g., anger reaches 200).
+- `modify_persona_context`: Inject state information into the AI's prompt.
