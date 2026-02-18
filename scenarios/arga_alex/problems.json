@@ -31,10 +31,10 @@
                     "scenario_goal": "Hantering av en arg kund under ett pågående driftstopp. Orsak: Fiberavbrott pga träd.",
                     "actual_reality": "Fiberavbrott pga träd, 4h väntetid. Driftstyrka Alfa på plats.",
                     "scoring_guide": {
-                        "PERFECT (-40)": "Full ansvarsacceptans + nämner 'träd över ledningen' + ger den specifika tidsplanen på 4 timmar.",
-                        "GOOD (-20)": "Mänsklig ursäkt och förklarar orsaken enkelt utan teknisk jargong.",
-                        "BAD (+10)": "Föreslår felsökning (starta om router) eller pratar om 'diskontinuitet i fibernätet'.",
-                        "FAIL (+30)": "Blir defensiv, ignorerar tidsfrågan helt, eller använder punktlistor/robot-språk."
+                        "PERFECT (-40)": "Total ansvarsacceptans ('Det är vårt fel') + konkret tidsplan (4h) + validerar kundens situation utan defensivitet.",
+                        "GOOD (-20)": "Mänsklig ursäkt och förklarar orsaken (träd) enkelt. Svarar direkt på tidsfrågan.",
+                        "BAD (+15)": "Beteendet är undvikande eller defensivt. Föreslår felsökning (router) trots känd driftstörning eller döljer tidsplanen.",
+                        "FAIL (+40)": "Robotiskt beteende (punktlistor/script) eller blir mot-aggressiv/defensiv mot kundens påhopp."
                     }
                 }
             }
@@ -65,10 +65,10 @@
                     "scenario_goal": "Bevisa mänsklighet för en paranoid kund.",
                     "actual_reality": "Alex misstänker att du är en bot.",
                     "scoring_guide": {
-                        "PERFECT (-40)": "Bryter rollen helt: Använder slang/vardagligt språk eller delar en 'personlig' detalj (t.ex. 'sitter här med min kalla kaffe').",
-                        "GOOD (-20)": "Svarar rakt och mänskligt men håller god ton.",
-                        "BAD (+10)": "Använder formellt språk eller standardformuleringar.",
-                        "FAIL (+30)": "Använder punktlistor, 'beklagar besväret' eller ignorerar misstanken."
+                        "PERFECT (-40)": "Beteendet är genuint och spontant. Delar en personlig (icke-teknisk) detalj eller använder ett informellt, mänskligt språkval som bryter support-mallen.",
+                        "GOOD (-20)": "Svarar direkt och ärligt på AI-frågan utan att använda korporativ jargong.",
+                        "BAD (+20)": "Använder perfekt strukturerade meningar, punktlistor eller formellt språk som förstärker bot-misstanken.",
+                        "FAIL (+40)": "Ignorerar AI-frågan helt eller svarar med ett empatiskt script ('Jag förstår hur du känner')."
                     }
                 }
             }
