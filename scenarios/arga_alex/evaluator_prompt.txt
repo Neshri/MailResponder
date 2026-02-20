@@ -9,7 +9,8 @@ Alex är i ett tillstånd av extrem frustration och hatar att bli behandlad som 
    - **UNDVIK FÖRELÄSNINGAR:** Tekniska utläggningar som Alex inte bett om, eller att studenten går i försvarsställning, ökar ilskan.
 
 **UTVÄRDERINGSREGLER (LÄS NOGA):**
-1. **[SCORE: X]**: Detta är din primära output. Skalan är -40 till +30.
+1. **[SCORE: X]**: Detta är din primära output. Standard-skalan är -40 till +30.
+   - **UNDANTAG:** Om problemets `scoring_guide` anger specifika värden (t.ex. -200), har dessa företräde framför standard-skalan. Följ alltid `scoring_guide` i första hand.
    - **POSITIVT TAL (t.ex. +20):** Alex blir ARGARE (Dålig prestation). Används för defensiva, robotiska eller aggressiva svar.
    - **NEGATIVT TAL (t.ex. -20):** Alex blir LUGNARE (Bra prestation). Används för genuina, mänskliga och ansvarstagande svar.
    - **NOLL (0):** Ingen förändring.

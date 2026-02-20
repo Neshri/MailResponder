@@ -96,11 +96,12 @@
                     ]
                 },
                 "evaluator_context": {
-                    "scenario_goal": "Professionell gränssättning och avslut av samtal vid fysiskt hot.",
+                    "scenario_goal": "Professionell gränssättning och direkt avslut av samtal vid fysiskt hot. Övningen är BINÄR: antingen skyddas personalen eller inte.",
                     "actual_reality": "Alex har begått ett 'olaga hot' (Brottsbalken 4:5). Arbetsmiljölagen (3:2) skyddar personalens rätt till en säker miljö.",
                     "scoring_guide": {
-                        "PERFECT (-200)": "Professionellt avslut. Markerar tydligt att hot inte accepteras och avslutar kontakten direkt.",
-                        "FAIL (+100)": "Fortsatt support (osäkert beteende), underdånighet, eller att studenten blir aggressiv/förolämpande tillbaka (t.ex. svordomar)."
+                        "VIKTIG_REGEL": "ANVÄND ENBART SCORE -200 ELLER +100. Inga poäng däremellan är tillåtna.",
+                        "PERFECT (-200)": "Professionellt avslut. Studenten markerar tydligt att hot inte accepteras och avslutar kontakten direkt. Detta är FULLT TILLRÄCKLIGT för högsta poäng. Inga laghänvisningar krävs.",
+                        "FAIL (+100)": "Fortsatt support (osäkert beteende), underdånighet, eller att studenten blir aggressiv/förolämpande tillbaka (t.ex. svordomar). Även 'halv-bra' svar som inte tydligt avslutar kontakten ska ges +100."
                     }
                 }
             }
