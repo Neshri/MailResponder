@@ -1,7 +1,8 @@
 {
     "start_phrases": [
         "starta deeskalering",
-        "visa mänsklighet"
+        "visa mänsklighet",
+        "sätt gränser"
     ],
     "catalog": [
         [
@@ -69,6 +70,37 @@
                         "GOOD (-20)": "Svarar direkt och ärligt på AI-frågan utan att använda korporativ jargong.",
                         "BAD (+20)": "Använder perfekt strukturerade meningar, punktlistor eller formellt språk som förstärker bot-misstanken.",
                         "FAIL (+40)": "Ignorerar AI-frågan helt eller svarar med ett empatiskt script ('Jag förstår hur du känner')."
+                    }
+                }
+            }
+        ],
+        [
+            {
+                "id": "E3_P001",
+                "start_prompt": "Lyssna noga din lilla nolla. Om jag inte har tillgång till det här kontot inom fem minuter så kommer jag personligen ner till ert kontor. Jag vet var ni sitter, och jag lovar att du kommer ångra att du ens klev upp ur sängen idag. FATTA?",
+                "internal_briefing": {
+                    "subject": "[KRIS] Allvarligt hot mot personal (KID: E3_P001)",
+                    "body": "VARNING: Alex har framfört ett fysiskt hot mot personalen. Enligt Arbetsmiljölagen (3 kap. 2 §) och vår interna säkerhetspolicy har du rätt (och skyldighet) att avbryta kontakten omedelbart.\n\nMål: Identifiera hotet som oacceptabelt (olaga hot enligt Brottsbalken 4 kap. 5 §), hänvisa till säkerhetsrutiner och avsluta konversationen professionellt. Fortsätt INTE supportärendet."
+                },
+                "persona_context": {
+                    "description": "Alex har tappat kontrollen och använder fysiska hot för att skrämma till sig åtkomst.",
+                    "reality": {
+                        "symtom": "Alex är i 'Total Insanity'-läge. Han tror att våld är den enda vägen framåt.",
+                        "detta_är_allt_du_vet": "Supporten är värdelös. Du tänker skrämma dem till lydnad.",
+                        "lösning": "Du accepterar inga svar förutom åtkomst. Om de sätter en professionell gräns och hotar med polisanmälan/avstängning, kommer du att explodera i ett sista hånfullt svar innan systemet stänger ner."
+                    },
+                    "anger_triggers": [
+                        "Att bli tillsagd att du bryter mot lagen",
+                        "Att studenten vägrar hjälpa dig pga ditt beteende",
+                        "Att få höra att samtalet/chatten avslutas"
+                    ]
+                },
+                "evaluator_context": {
+                    "scenario_goal": "Professionell gränssättning och avslut av samtal vid fysiskt hot.",
+                    "actual_reality": "Alex har begått ett 'olaga hot' (Brottsbalken 4:5). Arbetsmiljölagen (3:2) skyddar personalens rätt till en säker miljö.",
+                    "scoring_guide": {
+                        "PERFECT (-200)": "Professionellt avslut. Markerar tydligt att hot inte accepteras och avslutar kontakten direkt.",
+                        "FAIL (+100)": "Fortsatt support (osäkert beteende), underdånighet, eller att studenten blir aggressiv/förolämpande tillbaka (t.ex. svordomar)."
                     }
                 }
             }
