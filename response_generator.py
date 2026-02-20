@@ -70,16 +70,22 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         system_prompt_content += f"\n\nDIN NUVARANDE SINNESSTÄMNING: {anger_level_tag}"
 
     if evaluator_decision_marker == "[LÖST]":
-        # SUCCESS STATE - Can also be generalized if needed, but keeping simple for now
-        description = persona_context.get('description', 'Problemet') # Fallback
+        # SUCCESS STATE - Use scenario-specific resolution if available
+        description = persona_context.get('description', 'Problemet')
+        reality = persona_context.get('reality', {})
+        success_outcome = reality.get('success_outcome', 'Studentens svar hjälpte dig att lösa problemet! Du ser nu att allt fungerar som det ska.')
+        
         user_prompt_content = f"""
         **Din Berättelse (Kontext):**
         ---
         {description}
         ---
-        **Uppgift:** Studentens svar hjälpte dig att lösa problemet! 
-        Du ser nu att allt fungerar som det ska (enligt beskrivningen i berättelsen).
-        Svara i karaktär och bekräfta att problemet är borta.
+        **Utfall:** 
+        {success_outcome}
+        ---
+        **Uppgift:** 
+        Svara i karaktär baserat på utfallet ovan. Om utfallet innebär att problemet är löst, bekräfta detta hånfullt eller snäsigt. 
+        Om utfallet innebär att kontakten bryts eller att du blivit "besegrad" av en gränssättning, svara enligt det.
         """
         if has_images:
              user_prompt_content += "\n\n(OBS: Studenten skickade med en bild som du inte kan se. Nämn detta kort i din karaktär.)"

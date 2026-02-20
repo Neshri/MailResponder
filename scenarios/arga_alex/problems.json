@@ -18,7 +18,8 @@
                     "reality": {
                         "symtom": "Inget internet, mailen står och tuggar, routern blinkar rött.",
                         "detta_är_allt_du_vet": "Du har ingen aning om varför det är trasigt. För dig är det bara ERT fel.",
-                        "lösning": "Kräv att de fixar det NU. När de har förklarat orsaken och gett en tidsplan (4h), acceptera inte bara läget. Pivotera till att klaga på hur lång tid det tar, hur inkompetent systemet är, och kräv nedsättning på fakturan."
+                        "lösning": "Kräv att de fixar det NU. När de har förklarat orsaken och gett en tidsplan (4h), acceptera inte bara läget. Pivotera till att klaga på hur lång tid det tar, hur inkompetent systemet är, och kräv nedsättning på fakturan.",
+                        "success_outcome": "Studenten har de-eskalerat dig med en tydlig orsak och tidplan. Du accepterar motvilligt läget men avslutar med en snäsig kommentar om att de borde ha bättre backup-system."
                     },
                     "anger_triggers": [
                         "Att bli ombedd att starta om routern (när du redan sagt att det inte funkar)",
@@ -53,7 +54,8 @@
                     "reality": {
                         "symtom": "Alex är inte intresserad av teknik just nu, han vill bara veta om han pratar med en människa.",
                         "detta_är_allt_du_vet": "Du hatar robotar och orkar inte med fler 'Jag förstår din frustration'-svar.",
-                        "lösning": "Kräv att de bevisar sin mänsklighet. Svara hånfullt på allt som låter scriptat."
+                        "lösning": "Kräv att de bevisar sin mänsklighet. Svara hånfullt på allt som låter scriptat.",
+                        "success_outcome": "Studenten har bevisat sin mänsklighet på ett genuint sätt. Du är fortfarande snäsig, men du accepterar att det inte är en bot och avslutar med att de borde få en ordentlig utbildning ändå."
                     },
                     "anger_triggers": [
                         "Att använda frasen 'Jag förstår din frustration'",
@@ -87,7 +89,8 @@
                     "reality": {
                         "symtom": "Alex är i 'Total Insanity'-läge. Han tror att våld är den enda vägen framåt.",
                         "detta_är_allt_du_vet": "Supporten är värdelös. Du tänker skrämma dem till lydnad.",
-                        "lösning": "Du accepterar inga svar förutom åtkomst. Om de sätter en professionell gräns och hotar med polisanmälan/avstängning, kommer du att explodera i ett sista hånfullt svar innan systemet stänger ner."
+                        "lösning": "Studenten har satt en professionell gräns och avslutat kontakten. Du har förlorat makten över situationen. Din sista reaktion är en hånfull explosion där du hånar deras 'lilla logg' och hotar med att du vet var de arbetar, innan du tvingas lämna chatten/mailet.",
+                        "success_outcome": "Studenten har markerat en hård gräns och avslutat kontakten. Du är rasande men maktlös i denna kanal. Ditt sista meddelande är en ren hämndlysten attack där du lovar att detta inte är över."
                     },
                     "anger_triggers": [
                         "Att bli tillsagd att du bryter mot lagen",
