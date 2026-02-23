@@ -189,23 +189,23 @@ def process_completed_problem(result_package, email_data, scenario):
         active_lvl_idx = result_package["active_problem_level_idx"]
         prob_id = result_package["active_problem_info_id"]
         
-        start_phrases = scenario.start_phrases
         num_levels = len(scenario.problems)
-
         student_current_max_level_idx, _, _ = scenario.db_manager.get_student_progress(email_data["sender_email"]) 
-        potential_new_next_level_idx = active_lvl_idx + 1
+        potential_new_next_level_idx = max(active_lvl_idx + 1, student_current_max_level_idx)
+        
+        # Determine the highest unlocked level index (cap it at total levels)
+        highest_unlocked_idx = min(potential_new_next_level_idx, num_levels - 1)
 
         completion_msg = f"\n\nJättebra! Problem {prob_id} (Nivå {active_lvl_idx + 1}) är löst!"
-
-        if potential_new_next_level_idx < num_levels:
-            next_start_phrase_level_idx = max(potential_new_next_level_idx, student_current_max_level_idx)
-
-            if next_start_phrase_level_idx < num_levels:
-                completion_msg += f"\nStartfras för nästa nivå ({next_start_phrase_level_idx + 1}): \"{start_phrases[next_start_phrase_level_idx]}\""
-            else:
-                completion_msg += "\nDu har klarat alla nivåer! Grattis!"
-        else:
-            completion_msg += "\nDu har klarat alla nivåer! Grattis!"
+        completion_msg += "\n\nTillgängliga startfraser för detta scenario:"
+        
+        for i in range(highest_unlocked_idx + 1):
+            phrase = scenario.start_phrases[i]
+            completion_msg += f"\nNivå {i + 1}: \"{phrase}\""
+        
+        if potential_new_next_level_idx >= num_levels:
+            completion_msg += "\n\nDu har klarat alla nivåer! Grattis!"
+            
         result_package["ulla_final_reply_body"] += completion_msg
 
     if email_data.get("has_images") and scenario.image_warning:
