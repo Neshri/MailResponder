@@ -45,16 +45,29 @@ def chat_with_model(model, messages, options=None, **kwargs):
             **kwargs
         )
         # Handle both dict-like and object-like responses (Ollama library variance)
+        content = None
         try:
             # Try attribute access first (common in newer library versions/mocks)
             if hasattr(response, 'message'):
                 msg = response.message
-                return msg.content if hasattr(msg, 'content') else msg['content']
-            # Fallback to dict access
-            return response['message']['content']
+                content = msg.content if hasattr(msg, 'content') else msg['content']
+            else:
+                # Fallback to dict access
+                content = response['message']['content']
         except (KeyError, AttributeError, TypeError):
             # Final fallback if it's already a string or something else
-            return str(response)
+            content = str(response)
+
+        if not content:
+            # Empty content with no exception is otherwise a silent failure -
+            # log the raw response so it's diagnosable (e.g. reveals a
+            # separate reasoning/thinking field, a moderation block, or an
+            # unexpected response shape) instead of a guessing game next time.
+            logging.warning(
+                f"chat_with_model: Modell '{model}' returnerade tomt 'content'. "
+                f"Rått svarsobjekt (för felsökning): {response!r}"
+            )
+        return content
     except Exception as e:
         logging.error(f"Error chatting with model {model}: {e}")
         return None
