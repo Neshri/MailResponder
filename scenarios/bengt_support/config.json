@@ -1,0 +1,8 @@
+{
+    "scenario_name": "Bengt Support",
+    "persona_name": "Bengt",
+    "description": "Bengt från HR har fått en ny skrivare och behöver hjälp att få den att fungera igen. Ett rakt på sak-scenario där eleven behöver vara tydlig och beslutsam istället för att leta efter ledtrådar.",
+    "target_email_env_var": "BOT_EMAIL_ADDRESS",
+    "db_prefix": "bengt",
+    "image_warning_message": "Hej, jag har inte mailprogrammet inställt med bildvisning här på jobbet, så om du skickade en bild kan jag tyvärr inte se den. Beskriv gärna med ord om det var något viktigt på den!"
+}

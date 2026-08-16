@@ -60,20 +60,35 @@ def get_persona_reply(student_email, full_history_string, persona_context,
 
     logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
 
-    # Extract current anger level tag if it exists in context
-    anger_level_tag = persona_context.pop("current_anger_level_tag", None)
-    
+    # Extract current mood tag if it exists in context. Different scenario
+    # handlers use different key names (e.g. Arga Alex sets
+    # "current_anger_level_tag", Bengt sets "current_stress_tag") - check
+    # known keys rather than hardcoding one, so new handlers don't need a
+    # matching edit here to have their mood tag actually used.
+    mood_tag = None
+    for mood_key in ("current_anger_level_tag", "current_stress_tag"):
+        if mood_key in persona_context:
+            mood_tag = persona_context.pop(mood_key)
+            break
+
     system_prompt_content = system_prompt if system_prompt else "Du är en hjälpsam assistent."
     
     # Inject mood into system prompt if present to separate it from conversation history
-    if anger_level_tag:
-        system_prompt_content += f"\n\nDIN NUVARANDE SINNESSTÄMNING: {anger_level_tag}"
+    if mood_tag:
+        system_prompt_content += f"\n\nDIN NUVARANDE SINNESSTÄMNING: {mood_tag}"
 
     if evaluator_decision_marker == "[LÖST]":
         # SUCCESS STATE - Use scenario-specific resolution if available
         description = persona_context.get('description', 'Problemet')
         reality = persona_context.get('reality', {})
-        success_outcome = reality.get('success_outcome', 'Studentens svar hjälpte dig att lösa problemet! Du ser nu att allt fungerar som det ska.')
+        # Prefer a nested reality.success_outcome (Arga Alex's shape) if present,
+        # otherwise a flat success_outcome (e.g. set by BengtHandler), otherwise
+        # a generic fallback.
+        success_outcome = (
+            reality.get('success_outcome')
+            or persona_context.get('success_outcome')
+            or 'Studentens svar hjälpte dig att lösa problemet! Du ser nu att allt fungerar som det ska.'
+        )
         
         user_prompt_content = f"""
         **Din Berättelse (Kontext):**
@@ -120,7 +135,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         if has_images:
              user_prompt_content += "\n\n(OBS: Studenten skickade med en bild som du inte kan se. Nämn detta kort i din karaktär.)"
 
-    messages_for_ulla = [
+    messages_for_mailbot = [
         {'role': 'system', 'content': system_prompt_content},
         {'role': 'user', 'content': user_prompt_content}
     ]
@@ -128,7 +143,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
     try:
         response = chat_with_model(
             model=PERSONA_MODEL,
-            messages=messages_for_ulla,
+            messages=messages_for_mailbot,
             options={'temperature': 0.8, 'num_predict': 1000, 'repeat_penalty': 1.1}
         )
         if not response:
@@ -137,8 +152,11 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         persona_svar = response.strip()
         persona_svar = re.sub(r"<think>.*?</think>", "", persona_svar, flags=re.DOTALL).strip()
         
-        # STRICT CLEANING: Remove any hallucinated state tags
-        persona_svar = re.sub(r"\[Ilskenivå:.*?\]", "", persona_svar).strip()
+        # STRICT CLEANING: Remove any hallucinated state tags. Matches any
+        # "[...nivå: ...]"-style bracket tag (Ilskenivå, Stressnivå, and any
+        # future scenario's mood tag) rather than one hardcoded name, so a
+        # new handler's tag is cleaned up automatically.
+        persona_svar = re.sub(r"\[\S*[Nn]ivå:.*?\]", "", persona_svar).strip()
         
         # Clean up common LLM artifacts
         artifacts_to_strip = [

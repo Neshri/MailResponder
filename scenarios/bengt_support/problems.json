@@ -1,0 +1,42 @@
+{
+    "start_phrases": [
+        "starta bengt-ärende",
+        "bengt nivå 2",
+        "bengt nivå 3"
+    ],
+    "catalog": [
+        [
+            {
+                "id": "B1_P001",
+                "start_prompt": "Ämne: Skrivaren går inte att hitta igen\n\nHej,\n\nDen gamla skrivaren (HP LaserJet) gick sönder i förra veckan, så vi fick en ny från förrådet. Jag satte samma fasta IP-adress som den gamla haft sedan 2021, 192.168.1.50, precis enligt Linus gamla instruktion.\n\nDet fungerar ibland, men ibland säger datorn att \"skrivaren hittades inte\". Kan det bero på att adressen inte längre 'hör till' skrivaren på samma sätt som förut, nu när det är en ny maskin? Jag har fakturor som måste skickas ut idag, så gärna ett tydligt svar på vad jag ska göra.\n\nMvh,\nBengt",
+                "internal_briefing": {
+                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
+                    "body": "För att lösa detta permanent behöver den nya skrivarens MAC-adress registreras med en fast reservation för adressen 192.168.1.50 i routern. Be kunden om skrivarens MAC-adress. Den står oftast på en etikett på undersidan av enheten — men etiketten kan innehålla flera liknande koder, så var tydlig med vad kunden ska leta efter."
+                },
+                "persona_context": {
+                    "description": "Den nya skrivaren ersatte en trasig. Jag satte samma statiska IP som förut, men det fungerar bara ibland. Jag vet inte varför, och jag har inte tid att gissa mig fram — jag behöver bara tydliga instruktioner.",
+                    "technical_facts": {
+                        "skrivare": "LP-2540C (okänt kinesiskt märke, inköpt av förrådet, inte samma modell som den gamla HP:n)",
+                        "adress": "192.168.1.50 (statisk, satt manuellt enligt gammal instruktion från Linus)",
+                        "symptom": "Fungerar ibland, ibland 'Skrivare hittades inte'. Inte konsekvent.",
+                        "eget_antagande": "Bengt gissar att adressen inte 'hör till' den nya skrivaren på samma sätt som den gamla gjorde."
+                    }
+                },
+                "label_data": {
+                    "rows": [
+                        "Model: LP-2540C",
+                        "S/N: 22B4779X0091",
+                        "物理地址 (MAC): {{MAC_ADDRESS}}",
+                        "WLAN Module: RTL8188-WX",
+                        "Rated: 220-240V~ 50/60Hz",
+                        "[QR-kod som länkar till manual]"
+                    ],
+                    "correct_row_key": "物理地址 (MAC)"
+                },
+                "evaluator_context": {
+                    "source_problem_description": "Ny skrivare (annat märke, ny MAC-adress) fick samma statiska IP som den gamla, men adressen har aldrig registrerats med en reservation för den nya skrivarens MAC-adress i routerns DHCP-pool."
+                }
+            }
+        ]
+    ]
+}
