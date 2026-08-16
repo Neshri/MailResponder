@@ -50,15 +50,23 @@ def cap_history(full_history_string, max_turns=4):
 
 def get_persona_reply(student_email, full_history_string, persona_context,
                         latest_student_message, problem_level_idx, evaluator_decision_marker, 
-                        system_prompt=None, has_images=False):
+                        system_prompt=None, has_images=False, model_name=None):
     """
     Calls an LLM to generate the Persona's reply.
+
+    model_name should be the scenario's own persona model (e.g.
+    scenario.persona_model) - callers must pass it explicitly. If omitted,
+    falls back to the global PERSONA_MODEL default for backward
+    compatibility, but any scenario with its own model configured
+    (via config.json or a scenario-specific .env) will silently use the
+    wrong model unless its caller passes model_name through.
     """
-    if not PERSONA_MODEL:
-        logging.error(f"Persona ({student_email}): PERSONA_MODEL ej satt.")
+    model_to_use = model_name or PERSONA_MODEL
+    if not model_to_use:
+        logging.error(f"Persona ({student_email}): Inget persona-modellnamn tillgängligt (varken model_name eller global PERSONA_MODEL).")
         return "Glömde vad jag skulle säga..."
 
-    logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{PERSONA_MODEL}'.")
+    logging.info(f"Persona AI för {student_email} (Nivå {problem_level_idx+1}): Genererar svar baserat på '{evaluator_decision_marker}' med modell '{model_to_use}'.")
 
     # Extract current mood tag if it exists in context. Different scenario
     # handlers use different key names (e.g. Arga Alex sets
@@ -142,7 +150,7 @@ def get_persona_reply(student_email, full_history_string, persona_context,
 
     try:
         response = chat_with_model(
-            model=PERSONA_MODEL,
+            model=model_to_use,
             messages=messages_for_mailbot,
             options={'temperature': 0.8, 'num_predict': 1000, 'repeat_penalty': 1.1}
         )

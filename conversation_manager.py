@@ -137,7 +137,8 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         problem_level_idx_for_prompt,
         evaluator_marker,
         system_prompt=scenario.persona_prompt,
-        has_images=email_data_for_result.get("has_images", False)
+        has_images=email_data_for_result.get("has_images", False),
+        model_name=scenario.persona_model
     )
 
     # Scenario-specific reply modification
