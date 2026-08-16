@@ -152,7 +152,8 @@ def get_persona_reply(student_email, full_history_string, persona_context,
         response = chat_with_model(
             model=model_to_use,
             messages=messages_for_mailbot,
-            options={'temperature': 0.8, 'num_predict': 2000, 'repeat_penalty': 1.1}
+            options={'temperature': 0.8, 'num_predict': 4000, 'repeat_penalty': 1.1},
+            think=False
         )
         if not response:
             return "Åh nej, nu tappade jag visst bort mig lite..."
