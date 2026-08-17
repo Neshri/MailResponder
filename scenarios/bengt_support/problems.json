@@ -28,8 +28,7 @@
                         "S/N: 22B4779X0091",
                         "物理地址 (MAC): {{MAC_ADDRESS}}",
                         "WLAN Module: RTL8188-WX",
-                        "Rated: 220-240V~ 50/60Hz",
-                        "[QR-kod som länkar till manual]"
+                        "Rated: 220-240V~ 50/60Hz"
                     ],
                     "correct_row_key": "物理地址 (MAC)"
                 },

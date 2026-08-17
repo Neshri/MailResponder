@@ -116,7 +116,7 @@ class BengtHandler(BaseScenarioHandler):
 
     STARTING_STRESS = 30
     PASSIVE_STRESS_PER_TURN = 15
-    STRESS_FAIL_THRESHOLD = 100
+    STRESS_FAIL_THRESHOLD = 250
 
     # A message's score must be at least this negative (i.e. clearly good)
     # before a reveal roll is attempted at all.
@@ -180,8 +180,9 @@ class BengtHandler(BaseScenarioHandler):
 
         last_score = track_metadata.get("last_score_adjustment", 0)
         stress = track_metadata.get("stress_level", self.STARTING_STRESS)
+        topic_relevant = track_metadata.get("topic_relevant_last_turn")
 
-        if last_score <= self.CLARITY_SCORE_THRESHOLD:
+        if last_score <= self.CLARITY_SCORE_THRESHOLD and topic_relevant:
             # Higher stress -> lower odds, floored so it's never quite impossible.
             reveal_probability = max(self.MIN_REVEAL_PROBABILITY, 1 - (stress / 100))
             roll = random.random()
@@ -218,6 +219,15 @@ class BengtHandler(BaseScenarioHandler):
             )
             return
 
+        # Only show a label line at all if this turn's message was actually
+        # about the MAC - otherwise Bengt has no reason to be looking at the
+        # label, let alone reporting a row from it. topic_relevant is None
+        # for turns where the evaluator tag wasn't parsed (treat as "don't
+        # show" rather than risk a spurious reveal) and False for explicitly
+        # off-topic messages.
+        if not track_metadata.get("topic_relevant_last_turn"):
+            return
+
         rows = track_metadata.get("label_rows", [])
         correct_key = track_metadata.get("correct_row_key", "")
         distractor_rows = [r for r in rows if correct_key not in r]
@@ -229,6 +239,14 @@ class BengtHandler(BaseScenarioHandler):
     def modify_persona_reply(self, reply_text, track_metadata):
         if reply_text:
             stress = track_metadata.get("stress_level", self.STARTING_STRESS)
+            if track_metadata.get("mac_revealed"):
+                real_mac = track_metadata.get("real_mac", "")
+                if real_mac and real_mac not in reply_text:
+                    logging.warning(
+                        f"Handler: Bengts svar på en löst omgång innehöll INTE den "
+                        f"förväntade MAC-adressen '{real_mac}' ordagrant - personan kan "
+                        f"ha felskrivit den. Svar: '{reply_text}'"
+                    )
             return reply_text + f"\n\n[Stressnivå: {stress}]"
         return reply_text
 

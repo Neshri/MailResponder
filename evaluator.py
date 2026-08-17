@@ -7,10 +7,16 @@ from llm_client import chat_with_model
 def get_evaluator_decision(student_email, evaluator_context, latest_student_message_cleaned, model_name, problem_id=None, system_prompt=None, history_string=None):
     """
     Uses LLM to evaluate if the student's message contains a correct solution.
+
+    Returns a 4-tuple: (result_marker, raw_response, score_adjustment, topic_relevant).
+    topic_relevant is parsed from an optional [MAC_RELEVANT: JA/NEJ] tag - only
+    scenarios whose evaluator_prompt.txt requests this tag will get a non-None
+    value; other scenarios (e.g. Arga Alex) will simply get None, since the
+    tag won't appear in their evaluator's output.
     """
     if not model_name:
         logging.error(f"Evaluator ({student_email}): model_name ej satt.")
-        return "[EJ_LÖST]", "", 0
+        return "[EJ_LÖST]", "", 0, None
 
     logging.info(f"Evaluator för {student_email}: Utvärderar studentens meddelande med modell '{model_name}'.")
 
@@ -51,7 +57,7 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
             options={'temperature': 0.1, 'num_predict': 2500}
         )
         if not response:
-            return "[EJ_LÖST]", "", 0
+            return "[EJ_LÖST]", "", 0, None
 
         raw_eval_reply_from_llm = response.strip()
         logging.info(f"Evaluator ({student_email}): Raw LLM response: '{raw_eval_reply_from_llm}' | Evaluator prompt sent: {evaluator_prompt_content}")
@@ -71,6 +77,16 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
         if score_match:
             score_adjustment = int(score_match.group(1))
 
+        # Optional: some scenarios (e.g. Bengt) ask the evaluator to also
+        # judge whether the student's message was even about the relevant
+        # topic at all (vs. off-topic/small talk). Absent for scenarios that
+        # don't request it - stays None, which callers should treat as
+        # "not applicable" rather than "irrelevant".
+        topic_relevant = None
+        relevance_match = re.search(r'\[MAC_RELEVANT:\s*(JA|NEJ)\]', processed_eval_reply, re.IGNORECASE)
+        if relevance_match:
+            topic_relevant = relevance_match.group(1).upper() == "JA"
+
         for line in reversed(lines):
             line = line.strip()
             match = re.match(r'^\s*\[(LÖST|EJ_LÖST)\]\s*$', line)
@@ -83,7 +99,7 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
         result_marker = final_decision if final_decision else "[EJ_LÖST]"
         
         # We'll return a richer response for conversation_manager to handle
-        return result_marker, raw_eval_reply_from_llm, score_adjustment
+        return result_marker, raw_eval_reply_from_llm, score_adjustment, topic_relevant
     except Exception as e:
         logging.error(f"Evaluator ({student_email}): Fel vid LLM-anrop: {e}", exc_info=True)
-        return "[EJ_LÖST]", "", 0
+        return "[EJ_LÖST]", "", 0, None

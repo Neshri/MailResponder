@@ -93,7 +93,7 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
     # Pass history context ONLY for scenarios that need it (e.g., de-escalation/trend analysis)
     eval_history_context = scenario.handler.get_eval_history_context(full_history_string, track_metadata)
 
-    evaluator_marker, evaluator_raw_response, score_adjustment = get_evaluator_decision(
+    evaluator_marker, evaluator_raw_response, score_adjustment, topic_relevant = get_evaluator_decision(
         student_email,
         evaluator_context,
         latest_student_message_cleaned,
@@ -102,7 +102,14 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         system_prompt=scenario.evaluator_prompt,
         history_string=eval_history_context
     )
-    
+
+    # Store for handlers that care (e.g. Bengt gating label-reading behavior
+    # on whether this turn's message was actually about the MAC at all).
+    # None (scenarios that don't request the tag) is left as-is rather than
+    # coerced to False, so handlers can distinguish "not applicable" from
+    # "explicitly off-topic" if they need to.
+    track_metadata["topic_relevant_last_turn"] = topic_relevant
+
     # Update state via handler if applicable
     scenario.handler.on_evaluator_result(student_email, score_adjustment, track_metadata)
 
