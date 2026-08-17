@@ -54,7 +54,7 @@ Avsluta sedan med antingen '[LÖST]' eller '[EJ_LÖST]' (eller [SCORE: ...]) på
         response = chat_with_model(
             model=model_name,
             messages=messages_for_evaluator,
-            options={'temperature': 0.1, 'num_predict': 2500}
+            options={'temperature': 0.1, 'num_predict': 16000}
         )
         if not response:
             return "[EJ_LÖST]", "", 0, None
