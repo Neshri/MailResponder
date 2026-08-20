@@ -136,6 +136,10 @@ class BengtHandler(BaseScenarioHandler):
 
         real_mac = self._generate_random_mac()
         track_metadata["real_mac"] = real_mac
+        # Bengt won't act on/report a label row until the student has
+        # actually told him why he needs to (see ORSAK_FÖRKLARAD in
+        # evaluator_prompt.txt). Sticky - once explained, stays explained.
+        track_metadata["why_explained"] = False
 
         label_data = problem.get("label_data", {})
         rows = [row.replace("{{MAC_ADDRESS}}", real_mac) for row in label_data.get("rows", [])]
@@ -161,6 +165,9 @@ class BengtHandler(BaseScenarioHandler):
         track_metadata["stress_level"] += self.PASSIVE_STRESS_PER_TURN + score_adjustment
         track_metadata["stress_level"] = max(0, track_metadata["stress_level"])
 
+        if track_metadata.get("tag_orsak_förklarad"):
+            track_metadata["why_explained"] = True
+
         logging.info(
             f"Handler ({student_email}): Stressnivå justerad med "
             f"{self.PASSIVE_STRESS_PER_TURN + score_adjustment} (bas {self.PASSIVE_STRESS_PER_TURN} + score {score_adjustment}). "
@@ -180,9 +187,9 @@ class BengtHandler(BaseScenarioHandler):
 
         last_score = track_metadata.get("last_score_adjustment", 0)
         stress = track_metadata.get("stress_level", self.STARTING_STRESS)
-        topic_relevant = track_metadata.get("topic_relevant_last_turn")
+        topic_relevant = track_metadata.get("tag_mac_relevant")
 
-        if last_score <= self.CLARITY_SCORE_THRESHOLD and topic_relevant:
+        if last_score <= self.CLARITY_SCORE_THRESHOLD and topic_relevant and track_metadata.get("why_explained"):
             # Higher stress -> lower odds, floored so it's never quite impossible.
             reveal_probability = max(self.MIN_REVEAL_PROBABILITY, 1 - (stress / 100))
             roll = random.random()
@@ -221,11 +228,19 @@ class BengtHandler(BaseScenarioHandler):
 
         # Only show a label line at all if this turn's message was actually
         # about the MAC - otherwise Bengt has no reason to be looking at the
-        # label, let alone reporting a row from it. topic_relevant is None
+        # label, let alone reporting a row from it. tag_mac_relevant is None
         # for turns where the evaluator tag wasn't parsed (treat as "don't
         # show" rather than risk a spurious reveal) and False for explicitly
         # off-topic messages.
-        if not track_metadata.get("topic_relevant_last_turn"):
+        if not track_metadata.get("tag_mac_relevant"):
+            return
+
+        # Bengt won't go looking at all until he's been told why - he just
+        # knows the printer's flaky, not that a MAC address has anything to
+        # do with fixing it. Flag it so the persona prompt has him ask,
+        # rather than comply on faith or invent his own theory.
+        if not track_metadata.get("why_explained"):
+            persona_context["awaiting_reason"] = True
             return
 
         rows = track_metadata.get("label_rows", [])

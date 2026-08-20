@@ -8,10 +8,10 @@
         [
             {
                 "id": "B1_P001",
-                "start_prompt": "Ämne: Skrivaren går inte att hitta igen\n\nHej,\n\nDen gamla skrivaren (HP LaserJet) gick sönder i förra veckan, så vi fick en ny från förrådet. Jag satte samma fasta IP-adress som den gamla haft sedan 2021, 192.168.1.50, precis enligt Linus gamla instruktion.\n\nDet fungerar ibland, men ibland säger datorn att \"skrivaren hittades inte\". Kan det bero på att adressen inte längre 'hör till' skrivaren på samma sätt som förut, nu när det är en ny maskin? Jag har fakturor som måste skickas ut idag, så gärna ett tydligt svar på vad jag ska göra.\n\nMvh,\nBengt",
+                "start_prompt": "Ämne: Skrivaren går inte att hitta igen\n\nHej,\n\nDen gamla skrivaren (HP LaserJet) gick sönder i förra veckan, så vi fick en ny från förrådet. Jag fick en lapp om att jag skulle sätta samma fasta IP-adress som den gamla haft sedan 2021, 192.168.1.50, enligt Linus gamla instruktion i pärmen - mer sammanhang fick jag tyvärr inte, men jag antar att det är rätt eftersom det stod så.\n\nDet fungerar ibland, men ibland säger datorn att \"skrivaren hittades inte\". Jag fattar inte riktigt varför, det är ju samma adress som innan? Jag har fakturor som måste skickas ut idag, så gärna ett tydligt svar på vad jag ska göra.\n\nMvh,\nBengt",
                 "internal_briefing": {
                     "subject": "[Automatiskt meddelande från Kunskapsbasen]",
-                    "body": "För att lösa detta permanent behöver den nya skrivarens MAC-adress registreras med en fast reservation för adressen 192.168.1.50 i routern. Be kunden om skrivarens MAC-adress. Den står oftast på en etikett på undersidan av enheten — men etiketten kan innehålla flera liknande koder, så var tydlig med vad kunden ska leta efter."
+                    "body": "Hämta skrivarens MAC-adress för att registrera en fast IP-reservation i routern."
                 },
                 "persona_context": {
                     "description": "Den nya skrivaren ersatte en trasig. Jag satte samma statiska IP som förut, men det fungerar bara ibland. Jag vet inte varför, och jag har inte tid att gissa mig fram — jag behöver bara tydliga instruktioner.",
