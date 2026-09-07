@@ -104,12 +104,19 @@ class ArgaAlexHandler(BaseScenarioHandler):
 class BengtHandler(BaseScenarioHandler):
     """
     Handler for the 'Bengt' scenario (guiding a non-technical persona to
-    correctly read a MAC address off a cluttered device label under mounting,
-    passive stress). Unlike Arga Alex, stress rises a fixed amount EVERY turn
-    regardless of performance (Krogh's pressure doesn't wait) and can only be
-    offset by clear, reassuring instructions. Whether the correct MAC is
-    revealed is a weighted random roll ("perception check") rather than a
-    hard cutoff, with worse odds as stress rises.
+    correctly identify and report one value among several similar-looking
+    ones - a MAC address on a device label, a protocol in a router rule
+    table, a hostname in a settings page - under mounting, passive stress).
+    Unlike Arga Alex, stress rises a fixed amount EVERY turn regardless of
+    performance (Krogh's pressure doesn't wait) and can only be offset by
+    clear, reassuring instructions. Whether the correct value is revealed is
+    a weighted random roll ("perception check") rather than a hard cutoff,
+    with worse odds as stress rises.
+
+    Shared by every problem under the "Bengt Support" scenario name (see
+    HANDLER_REGISTRY) - per-problem specifics (what's being looked for, what
+    counts as an adequate explanation) live entirely in problems.json's
+    label_data/evaluator_context, not here.
 
     Tunable constants below are initial proposals, not fixed rules.
     """
@@ -132,19 +139,27 @@ class BengtHandler(BaseScenarioHandler):
     def on_start_problem(self, problem, track_metadata):
         track_metadata["stress_level"] = self.STARTING_STRESS
         track_metadata["last_score_adjustment"] = 0
-        track_metadata["mac_revealed"] = False
-
-        real_mac = self._generate_random_mac()
-        track_metadata["real_mac"] = real_mac
-        # Bengt won't act on/report a label row until the student has
-        # actually told him why he needs to (see ORSAK_FÖRKLARAD in
+        track_metadata["value_revealed"] = False
+        # Bengt won't act on/report a value until the student has actually
+        # told him why he needs to (see ORSAK_FÖRKLARAD in
         # evaluator_prompt.txt). Sticky - once explained, stays explained.
         track_metadata["why_explained"] = False
 
         label_data = problem.get("label_data", {})
-        rows = [row.replace("{{MAC_ADDRESS}}", real_mac) for row in label_data.get("rows", [])]
+        # Most problems specify a fixed value (an existing misconfiguration
+        # Bengt just needs to read and report - e.g. "UDP", a stale
+        # hostname). Only fall back to a random MAC when the problem doesn't
+        # supply one, keeping Level 1's per-session-random behavior intact.
+        fixed_value = label_data.get("fixed_target_value")
+        target_value = fixed_value if fixed_value else self._generate_random_mac()
+        track_metadata["target_value"] = target_value
+
+        rows = [row.replace("{{CODE}}", target_value) for row in label_data.get("rows", [])]
         track_metadata["label_rows"] = rows
         track_metadata["correct_row_key"] = label_data.get("correct_row_key", "")
+        # What Bengt says he's looking at (label / router table / web UI) -
+        # generic, so the persona prompt doesn't have to assume a sticker.
+        track_metadata["medium_description"] = label_data.get("medium_description", "sammanhanget")
 
     def modify_start_email_body(self, reply_body, track_metadata):
         return reply_body + f"\n\n[Stressnivå: {self.STARTING_STRESS}]"
@@ -182,12 +197,12 @@ class BengtHandler(BaseScenarioHandler):
         # instant win, decided here (before modify_persona_context /
         # persona generation run) so the same turn's reply can already be
         # the celebratory [LÖST] branch.
-        if track_metadata.get("mac_revealed"):
+        if track_metadata.get("value_revealed"):
             return True
 
         last_score = track_metadata.get("last_score_adjustment", 0)
         stress = track_metadata.get("stress_level", self.STARTING_STRESS)
-        topic_relevant = track_metadata.get("tag_mac_relevant")
+        topic_relevant = track_metadata.get("tag_kod_relevant")
 
         if last_score <= self.CLARITY_SCORE_THRESHOLD and topic_relevant and track_metadata.get("why_explained"):
             # Higher stress -> lower odds, floored so it's never quite impossible.
@@ -195,12 +210,12 @@ class BengtHandler(BaseScenarioHandler):
             roll = random.random()
             passed = roll < reveal_probability
             logging.info(
-                f"Handler ({student_email}): MAC-reveal roll - stress={stress}, "
+                f"Handler ({student_email}): Värde-reveal roll - stress={stress}, "
                 f"sannolikhet={reveal_probability:.2f}, slag={roll:.2f}, "
                 f"resultat={'LYCKAT' if passed else 'MISSLYCKAT'}"
             )
             if passed:
-                track_metadata["mac_revealed"] = True
+                track_metadata["value_revealed"] = True
                 return True
 
         return False
@@ -209,35 +224,36 @@ class BengtHandler(BaseScenarioHandler):
         stress = track_metadata.get("stress_level", self.STARTING_STRESS)
         persona_context["current_stress_tag"] = f"[Stressnivå: {stress}]"
 
-        if track_metadata.get("mac_revealed"):
+        if track_metadata.get("value_revealed"):
             # The [LÖST] branch in response_generator only reads
             # 'description' and 'success_outcome' from persona_context - it
-            # never sees etikett_rad_att_lasa or other fields. So the actual
-            # MAC has to be embedded directly into success_outcome, or the
-            # win turn's reply would never actually contain the code Bengt
-            # was supposed to be revealing.
-            real_mac = track_metadata.get("real_mac", "")
+            # never sees rad_att_lasa or other fields. So the actual value
+            # has to be embedded directly into success_outcome, or the win
+            # turn's reply would never actually contain the value Bengt was
+            # supposed to be revealing.
+            target_value = track_metadata.get("target_value", "")
+            medium_description = track_metadata.get("medium_description", "sammanhanget")
             persona_context["success_outcome"] = (
-                f"Bengt hittar och läser tydligt upp rätt kod på etiketten: {real_mac}. "
+                f"Bengt hittar och läser tydligt upp rätt värde i {medium_description}: {target_value}. "
                 "Ge honom en kort, tacksam och lättad slutreplik där han läser upp "
-                f"koden rakt av (t.ex. \"Jag tror jag hittade den: {real_mac}\") innan "
-                "han avslutar mejlet. Lättnaden gäller inte bara skrivaren, utan också "
+                f"värdet rakt av (t.ex. \"Jag tror jag hittade den: {target_value}\") innan "
+                "han avslutar mejlet. Lättnaden gäller inte bara det tekniska problemet, utan också "
                 "att ärendet löstes utan att dra ut på tiden. Han tackar gärna lite väl mycket."
             )
             return
 
-        # Only show a label line at all if this turn's message was actually
-        # about the MAC - otherwise Bengt has no reason to be looking at the
-        # label, let alone reporting a row from it. tag_mac_relevant is None
-        # for turns where the evaluator tag wasn't parsed (treat as "don't
-        # show" rather than risk a spurious reveal) and False for explicitly
+        # Only show a value at all if this turn's message was actually about
+        # it - otherwise Bengt has no reason to be looking anywhere, let
+        # alone reporting something back. tag_kod_relevant is None for turns
+        # where the evaluator tag wasn't parsed (treat as "don't show"
+        # rather than risk a spurious reveal) and False for explicitly
         # off-topic messages.
-        if not track_metadata.get("tag_mac_relevant"):
+        if not track_metadata.get("tag_kod_relevant"):
             return
 
         # Bengt won't go looking at all until he's been told why - he just
-        # knows the printer's flaky, not that a MAC address has anything to
-        # do with fixing it. Flag it so the persona prompt has him ask,
+        # knows something's flaky, not that this specific value has anything
+        # to do with fixing it. Flag it so the persona prompt has him ask,
         # rather than comply on faith or invent his own theory.
         if not track_metadata.get("why_explained"):
             persona_context["awaiting_reason"] = True
@@ -246,21 +262,22 @@ class BengtHandler(BaseScenarioHandler):
         rows = track_metadata.get("label_rows", [])
         correct_key = track_metadata.get("correct_row_key", "")
         distractor_rows = [r for r in rows if correct_key not in r]
+        persona_context["plats_beskrivning"] = track_metadata.get("medium_description", "sammanhanget")
         if distractor_rows:
-            persona_context["etikett_rad_att_lasa"] = random.choice(distractor_rows)
+            persona_context["rad_att_lasa"] = random.choice(distractor_rows)
         else:
-            persona_context["etikett_rad_att_lasa"] = "[flera rader, oklart vilken som menas]"
+            persona_context["rad_att_lasa"] = "[flera rader, oklart vilken som menas]"
 
     def modify_persona_reply(self, reply_text, track_metadata):
         if reply_text:
             stress = track_metadata.get("stress_level", self.STARTING_STRESS)
-            if track_metadata.get("mac_revealed"):
-                real_mac = track_metadata.get("real_mac", "")
-                if real_mac and real_mac not in reply_text:
+            if track_metadata.get("value_revealed"):
+                target_value = track_metadata.get("target_value", "")
+                if target_value and target_value not in reply_text:
                     logging.warning(
-                        f"Handler: Bengts svar på en löst omgång innehöll INTE den "
-                        f"förväntade MAC-adressen '{real_mac}' ordagrant - personan kan "
-                        f"ha felskrivit den. Svar: '{reply_text}'"
+                        f"Handler: Bengts svar på en löst omgång innehöll INTE det "
+                        f"förväntade värdet '{target_value}' ordagrant - personan kan "
+                        f"ha felskrivit det. Svar: '{reply_text}'"
                     )
             return reply_text + f"\n\n[Stressnivå: {stress}]"
         return reply_text
@@ -271,7 +288,7 @@ class BengtHandler(BaseScenarioHandler):
         # after modify_persona_context in the calling code, so without this
         # guard a reveal and a stress-threshold breach on the same turn would
         # incorrectly archive the session as a failure.
-        if track_metadata.get("mac_revealed"):
+        if track_metadata.get("value_revealed"):
             return False, None
 
         stress = track_metadata.get("stress_level", 0)

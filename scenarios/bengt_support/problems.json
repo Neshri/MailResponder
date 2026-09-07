@@ -1,8 +1,8 @@
 {
     "start_phrases": [
         "starta bengt-ärende",
-        "bengt nivå 2",
-        "bengt nivå 3"
+        "utskrifterna fastnar i kön igen",
+        "skannern hittar inte servern"
     ],
     "catalog": [
         [
@@ -26,14 +26,86 @@
                     "rows": [
                         "Model: LP-2540C",
                         "S/N: 22B4779X0091",
-                        "物理地址 (MAC): {{MAC_ADDRESS}}",
+                        "物理地址 (MAC): {{CODE}}",
                         "WLAN Module: RTL8188-WX",
                         "Rated: 220-240V~ 50/60Hz"
                     ],
-                    "correct_row_key": "物理地址 (MAC)"
+                    "correct_row_key": "物理地址 (MAC)",
+                    "medium": "etikett",
+                    "medium_description": "en etikett på skrivarens undersida"
                 },
                 "evaluator_context": {
-                    "source_problem_description": "Ny skrivare (annat märke, ny MAC-adress) fick samma statiska IP som den gamla, men adressen har aldrig registrerats med en reservation för den nya skrivarens MAC-adress i routerns DHCP-pool."
+                    "source_problem_description": "Ny skrivare (annat märke, ny MAC-adress) fick samma statiska IP som den gamla, men adressen har aldrig registrerats med en reservation för den nya skrivarens MAC-adress i routerns DHCP-pool.",
+                    "comprehension_check": "En begriplig förklaring ska få Bengt att förstå att en MAC-adress är en unik kod knuten till just den fysiska enheten, till skillnad från en IP-adress som är en plats i nätverket som kan återanvändas av andra enheter - och att just DÄRFÖR har den nya skrivaren en annan MAC-adress än den gamla, vilket är orsaken till att den gamla adress-reservationen inte längre fungerar. En förklaring som bara upprepar korrekta tekniska termer (t.ex. \"DHCP-reservationen är bunden till fel MAC\") utan att förklara vad en MAC-adress faktiskt är räknas INTE som tillräcklig."
+                }
+            }
+        ],
+        [
+            {
+                "id": "B2_P001",
+                "start_prompt": "Ämne: Utskrifter fastnar i kön\n\nHej,\n\nSedan i tisdags fastnar alla mina utskrifter bara i kön - det står \"Spolar...\" och sen händer inget mer, hur länge jag än väntar. Jag har provat starta om datorn två gånger.\n\nJag fick höra av Linus för länge sen att det finns någon regel i routern för just den här skrivaren, men jag vet inte mer än så. Kan ni kolla vad som är fel? Jag har ett möte om en timme och behöver kunna skriva ut underlag innan dess.\n\nMvh,\nBengt",
+                "internal_briefing": {
+                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
+                    "body": "Ta reda på vilket protokoll (TCP/UDP) som står angivet för skrivarens nuvarande brandväggsregel."
+                },
+                "persona_context": {
+                    "description": "Utskrifterna fastnar i kön och blir aldrig klara. Det har fungerat innan, jag vet inte vad som ändrats.",
+                    "technical_facts": {
+                        "skrivare": "LP-2540C (samma som tidigare ärende)",
+                        "port": "9100 (standard rå-utskriftsport)",
+                        "symptom": "Jobb fastnar permanent i kö-status \"Spolar...\", ingen felkod.",
+                        "eget_antagande": "Bengt vet bara att \"det finns en regel\" i routern, inget mer."
+                    }
+                },
+                "label_data": {
+                    "medium": "router_tabell",
+                    "medium_description": "en tabell med brandväggsregler i routerns adminpanel",
+                    "rows": [
+                        "Namn: Gästnätverk | Port: 8080 | Protokoll: TCP",
+                        "Namn: IP-telefon | Port: 5060 | Protokoll: UDP",
+                        "Namn: Skrivare (Ekonomi) | Port: 9100 | Protokoll: UDP",
+                        "Namn: Backup-server | Port: 2049 | Protokoll: TCP"
+                    ],
+                    "correct_row_key": "Skrivare (Ekonomi)",
+                    "fixed_target_value": "UDP"
+                },
+                "evaluator_context": {
+                    "source_problem_description": "Skrivarens brandväggsregel för port 9100 registrerades av misstag som UDP istället för TCP. Rätt portnummer men fel protokoll gör att utskriftsjobb ibland tappas eller blir korrupta istället för att levereras pålitligt.",
+                    "comprehension_check": "En begriplig förklaring ska få Bengt att förstå att TCP och UDP är två olika sätt att skicka data även på samma portnummer - TCP bekräftar att varje del kommer fram (som ett rekommenderat brev), UDP gör det inte (som ett vykort) - och att en utskrift behöver den pålitliga varianten (TCP) för att inte fastna eller bli korrupt. En förklaring som bara säger \"byt till TCP\" utan att förklara skillnaden räknas INTE som tillräcklig."
+                }
+            }
+        ],
+        [
+            {
+                "id": "B3_P001",
+                "start_prompt": "Ämne: Skanna till mejl fungerar inte längre\n\nHej,\n\nSkrivaren fungerar fint för vanliga utskrifter, men \"skanna till mejl\"-knappen ger bara ett felmeddelande nu (\"Kan ej ansluta till server\"). Det har fungerat jättebra tidigare, så jag förstår inte vad som hänt - nätverket funkar ju, jag kan skriva ut som vanligt.\n\nJag behöver skanna in några kvitton och mejla vidare idag om det går.\n\nMvh,\nBengt",
+                "internal_briefing": {
+                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
+                    "body": "Ta reda på vilken SMTP-server som står inställd på skrivaren just nu."
+                },
+                "persona_context": {
+                    "description": "Skanna-till-mejl har slutat fungera trots att utskrift och nätverket i övrigt funkar som vanligt.",
+                    "technical_facts": {
+                        "skrivare": "LP-2540C (samma som tidigare ärenden)",
+                        "symptom": "Felmeddelande \"Kan ej ansluta till server\" endast vid skanna-till-mejl.",
+                        "eget_antagande": "Bengt antar att om nätverket funkar för utskrift borde allt annat också funka."
+                    }
+                },
+                "label_data": {
+                    "medium": "webbgränssnitt",
+                    "medium_description": "skrivarens inställningssida för e-post/skanning i webbläsaren",
+                    "rows": [
+                        "SMTP-server: mail.oldserver.internal",
+                        "Port: 587",
+                        "Avsändaradress: skrivare@movant.org",
+                        "Autentiseringsmetod: STARTTLS"
+                    ],
+                    "correct_row_key": "SMTP-server",
+                    "fixed_target_value": "mail.oldserver.internal"
+                },
+                "evaluator_context": {
+                    "source_problem_description": "IT bytte mejlserver till mail.movant.org för ett tag sedan, men skrivarens egna skanna-till-mejl-inställning pekar fortfarande på den gamla, numera nedlagda servern (mail.oldserver.internal) - inställningen på skrivaren har aldrig uppdaterats efter bytet.",
+                    "comprehension_check": "En begriplig förklaring ska få Bengt att förstå att en fungerande nätverksadress (IP) INTE är samma sak som att skrivaren vet VAR mejlservern finns - att skrivaren \"kommer ut på nätverket\" och att den vet vilken mejltjänst den ska skicka till är två separata saker, ungefär som att veta en byggnads gatuadress inte berättar vilken avdelning inuti man ska till. En förklaring som antar att \"nätverket redan fungerar så det borde funka\" utan att beröra detta räknas INTE som tillräcklig."
                 }
             }
         ]
