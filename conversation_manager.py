@@ -103,13 +103,16 @@ def llm_evaluation_and_reply_task(student_email, full_history_string, problem_in
         history_string=eval_history_context
     )
 
-    # Store every tag the evaluator emitted (e.g. MAC_RELEVANT, ORSAK_FÖRKLARAD)
+    # Store every tag the evaluator emitted (e.g. KOD_RELEVANT, ORSAK_FÖRKLARAD)
     # as track_metadata["tag_<name>"], so handlers can read whichever tags
     # their own evaluator_prompt.txt asks for without this file needing to
-    # know about them. A tag absent this turn (scenario didn't request it,
-    # or the LLM omitted it) simply leaves the key unset -
-    # track_metadata.get("tag_whatever") reads as None, same "not
-    # applicable" behavior as before.
+    # know about them. Stale tag_* keys from a PREVIOUS turn are cleared
+    # first - otherwise a tag the evaluator doesn't emit this turn (by
+    # design, or because it hallucinated a slightly different tag name)
+    # would silently leave an old turn's value in place instead of reading
+    # as "not applicable this turn".
+    for stale_key in [k for k in track_metadata if k.startswith("tag_")]:
+        del track_metadata[stale_key]
     for tag_name, tag_value in eval_tags.items():
         track_metadata[f"tag_{tag_name.lower()}"] = tag_value
 

@@ -131,7 +131,7 @@ class BengtHandler(BaseScenarioHandler):
 
     # Floor on reveal probability so it's never quite impossible, even at
     # high stress - mirrors a DnD perception check always having some chance.
-    MIN_REVEAL_PROBABILITY = 0.05
+    MIN_REVEAL_PROBABILITY = 0.1
 
     def _generate_random_mac(self):
         return "-".join(f"{random.randint(0, 255):02X}" for _ in range(6))
@@ -173,6 +173,23 @@ class BengtHandler(BaseScenarioHandler):
     def on_evaluator_result(self, student_email, score_adjustment, track_metadata):
         if track_metadata.get("stress_level") is None:
             track_metadata["stress_level"] = self.STARTING_STRESS
+
+        # The evaluator's KOD_RELEVANT tag can occasionally come out garbled
+        # on a wobbly/quantized local model (observed in practice: it once
+        # emitted "KOD_REVERSANT" instead of "KOD_RELEVANT"). Per
+        # evaluator_prompt.txt's own instructions, ORSAK_FÖRKLARAD should
+        # NEVER appear at all unless the evaluator already judged
+        # KOD_RELEVANT: JA - so its mere presence this turn is a reliable
+        # fallback signal, even when the primary tag's name got mangled.
+        # Fixed here, once, rather than in every method that reads
+        # tag_kod_relevant downstream.
+        if track_metadata.get("tag_kod_relevant") is None and "tag_orsak_förklarad" in track_metadata:
+            logging.warning(
+                f"Handler ({student_email}): tag_kod_relevant saknas men "
+                f"tag_orsak_förklarad finns denna tur - antar relevant "
+                f"(trolig tag-hallucination från evaluatorn)."
+            )
+            track_metadata["tag_kod_relevant"] = True
 
         track_metadata["last_score_adjustment"] = score_adjustment
         # Krogh's pressure ticks up every turn regardless of performance;
