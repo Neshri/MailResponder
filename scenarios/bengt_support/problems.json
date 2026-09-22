@@ -10,8 +10,8 @@
                 "id": "B1_P001",
                 "start_prompt": "Ämne: Skrivaren går inte att hitta igen\n\nHej,\n\nDen gamla skrivaren (HP LaserJet) gick sönder i förra veckan, så vi fick en ny från förrådet. Jag fick en lapp om att jag skulle sätta samma fasta IP-adress som den gamla haft sedan 2021, 192.168.1.50, enligt Linus gamla instruktion i pärmen - mer sammanhang fick jag tyvärr inte, men jag antar att det är rätt eftersom det stod så.\n\nDet fungerar ibland, men ibland säger datorn att \"skrivaren hittades inte\". Jag fattar inte riktigt varför, det är ju samma adress som innan? Jag har fakturor som måste skickas ut idag, så gärna ett tydligt svar på vad jag ska göra.\n\nMvh,\nBengt",
                 "internal_briefing": {
-                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
-                    "body": "Hämta skrivarens MAC-adress för att registrera en fast IP-reservation i routern."
+                    "subject": "[Intern briefing]",
+                    "body": "Uppdrag: Hämta skrivarens MAC-adress (fysiska adress) - den står på etiketten på skrivarens undersida.\nBengt kommer inte nöja sig med bara en siffra - han vill förstå varför hans gamla IP-inställning plötsligt struliar. Fundera på skillnaden mellan en MAC-adress och en IP-adress innan du svarar honom."
                 },
                 "persona_context": {
                     "description": "Den nya skrivaren ersatte en trasig. Jag satte samma statiska IP som förut, men det fungerar bara ibland. Jag vet inte varför, och jag har inte tid att gissa mig fram — jag behöver bara tydliga instruktioner.",
@@ -45,8 +45,8 @@
                 "id": "B2_P001",
                 "start_prompt": "Ämne: Utskrifter fastnar i kön\n\nHej,\n\nSedan i tisdags fastnar alla mina utskrifter bara i kön - det står \"Spolar...\" och sen händer inget mer, hur länge jag än väntar. Jag har provat starta om datorn två gånger.\n\nJag fick höra av Linus för länge sen att det finns någon regel i routern för just den här skrivaren, men jag vet inte mer än så. Kan ni kolla vad som är fel? Jag har ett möte om en timme och behöver kunna skriva ut underlag innan dess.\n\nMvh,\nBengt",
                 "internal_briefing": {
-                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
-                    "body": "Ta reda på vilket protokoll (TCP/UDP) som står angivet för skrivarens nuvarande brandväggsregel."
+                    "subject": "[Intern briefing]",
+                    "body": "Uppdrag: Ta reda på vilket protokoll (TCP/UDP) som just nu är inställt för skrivarens brandväggsregel.\nBengt vill veta varför utskrifterna fastnar i kön - fundera på skillnaden mellan TCP och UDP innan du förklarar för honom."
                 },
                 "persona_context": {
                     "description": "Utskrifterna fastnar i kön och blir aldrig klara. Det har fungerat innan, jag vet inte vad som ändrats.",
@@ -80,8 +80,8 @@
                 "id": "B3_P001",
                 "start_prompt": "Ämne: Skanna till mejl fungerar inte längre\n\nHej,\n\nSkrivaren fungerar fint för vanliga utskrifter, men \"skanna till mejl\"-knappen ger bara ett felmeddelande nu (\"Kan ej ansluta till server\"). Det har fungerat jättebra tidigare, så jag förstår inte vad som hänt - nätverket funkar ju, jag kan skriva ut som vanligt.\n\nJag behöver skanna in några kvitton och mejla vidare idag om det går.\n\nMvh,\nBengt",
                 "internal_briefing": {
-                    "subject": "[Automatiskt meddelande från Kunskapsbasen]",
-                    "body": "Ta reda på vilken SMTP-server som står inställd på skrivaren just nu."
+                    "subject": "[Intern briefing]",
+                    "body": "Uppdrag: Ta reda på vilken SMTP-server som just nu är inställd på skrivaren.\nBengt antar att eftersom nätverket funkar för utskrift borde allt annat också funka - fundera på om det stämmer innan du svarar honom."
                 },
                 "persona_context": {
                     "description": "Skanna-till-mejl har slutat fungera trots att utskrift och nätverket i övrigt funkar som vanligt.",
