@@ -11,7 +11,7 @@
                 "start_prompt": "Ämne: Skrivaren går inte att hitta igen\n\nHej,\n\nDen gamla skrivaren (HP LaserJet) gick sönder i förra veckan, så vi fick en ny från förrådet. Jag fick en lapp om att jag skulle sätta samma fasta IP-adress som den gamla haft sedan 2021, 192.168.1.50, enligt Linus gamla instruktion i pärmen - mer sammanhang fick jag tyvärr inte, men jag antar att det är rätt eftersom det stod så.\n\nDet fungerar ibland, men ibland säger datorn att \"skrivaren hittades inte\". Jag fattar inte riktigt varför, det är ju samma adress som innan? Jag har fakturor som måste skickas ut idag, så gärna ett tydligt svar på vad jag ska göra.\n\nMvh,\nBengt",
                 "internal_briefing": {
                     "subject": "[Intern briefing]",
-                    "body": "Uppdrag: Hämta skrivarens MAC-adress (fysiska adress) - den står på etiketten på skrivarens undersida.\nBengt kommer inte nöja sig med bara en siffra - han vill förstå varför hans gamla IP-inställning plötsligt struliar. Fundera på skillnaden mellan en MAC-adress och en IP-adress innan du svarar honom."
+                    "body": "Uppdrag: Hämta skrivarens MAC-adress (fysiska adress) - den står på etiketten på skrivarens undersida.\nBengt kommer inte nöja sig med bara en siffra - han vill förstå varför hans gamla IP-inställning plötsligt strular. Fundera på skillnaden mellan en MAC-adress och en IP-adress innan du svarar honom."
                 },
                 "persona_context": {
                     "description": "Den nya skrivaren ersatte en trasig. Jag satte samma statiska IP som förut, men det fungerar bara ibland. Jag vet inte varför, och jag har inte tid att gissa mig fram — jag behöver bara tydliga instruktioner.",
