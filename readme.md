@@ -163,7 +163,16 @@ EVAL_MODEL="gemma3:12b-it-qat"
 
 ### Running the Bot
 
-Ensure your virtual environment is active (`(.venv)` is visible in your terminal).
+Before running the bot manually, make sure the virtual environment is active. You'll know it's active when your terminal prompt is prefixed with `(.venv)`.
+
+-   **Windows** (PowerShell):
+    ```powershell
+    .\.venv\Scripts\activate
+    ```
+-   **Linux / macOS**:
+    ```bash
+    source .venv/bin/activate
+    ```
 
 #### Running in the Foreground
 To run the bot and see live log output in your terminal, simply execute the script:
@@ -172,34 +181,80 @@ python MailResponder.py
 ```
 This is recommended for testing and debugging. The script will stop if you close the terminal or press `Ctrl+C`.
 
-#### Running in the Background (Linux/macOS)
-For continuous operation on a Linux or macOS system, you can run the script as a background process using the `&` operator. This will free up your terminal for other commands.
-```bash
-python MailResponder.py &
-```
-**Note:** Be aware that if you close your terminal session, the background process may also be terminated. This method is suitable for short-term background execution where you plan to keep the session open.
+#### Running as a System Service (Linux — Recommended for Production)
 
-### Utility Commands
+For reliable, always-on operation on a Linux server, register the bot as a `systemd` service. This ensures it starts automatically on boot and restarts itself if it crashes.
 
--   **Database Inspector (`db_inspector.py`):**
-    The primary tool for monitoring student progress and analyzing AI behavior across all scenarios.
-    
+1.  Create a service file (replace the paths and user to match your server):
     ```bash
-    # Show summary of all scenarios and progress
-    python db_inspector.py
-    
-    # Filter by specific student email
-    python db_inspector.py -e student@example.com
-    
-    # Inspect full debug history (including raw AI thought blocks)
-    python db_inspector.py --debug
-    
-    # Search for keywords in conversation histories
-    python db_inspector.py --search "hårddisk"
-    
-    # List all loaded scenarios and their database paths
-    python db_inspector.py --list
+    sudo nano /etc/systemd/system/mailresponder.service
     ```
+    ```ini
+    [Unit]
+    Description=MailResponder AI Training Bot
+    After=network.target
+
+    [Service]
+    User=<your-linux-user>
+    WorkingDirectory=/path/to/MailResponder
+    ExecStart=/path/to/MailResponder/.venv/bin/python MailResponder.py
+    Restart=on-failure
+    RestartSec=10
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
+2.  Enable and start the service:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable mailresponder
+    sudo systemctl start mailresponder
+    ```
+
+3.  Check that it's running:
+    ```bash
+    sudo systemctl status mailresponder
+    ```
+
+4.  View live logs:
+    ```bash
+    journalctl -u mailresponder -f
+    ```
+
+### Monitoring Student Progress (`db_inspector.py`)
+
+`db_inspector.py` is the main tool for checking how students are doing and for reviewing the AI's behavior. It reads directly from the scenario databases and prints a summary to the terminal. You do **not** need programming knowledge to use it — just run the commands below from the project directory with the virtual environment active.
+
+**Quick start — see everything:**
+```bash
+python db_inspector.py
+```
+Prints a summary of all scenarios: which students are active, what level they're on, and how far they've progressed.
+
+**Look up a specific student:**
+```bash
+python db_inspector.py -e student@example.com
+```
+Filters all output to only show that student's conversations and progress.
+
+**See the full AI conversation logs:**
+```bash
+python db_inspector.py --debug
+```
+Shows the raw back-and-forth between the system and the AI models, including evaluator verdicts. Useful for understanding *why* the bot responded a certain way.
+
+**Search conversation history for a keyword:**
+```bash
+python db_inspector.py --search "hårddisk"
+```
+Searches across all stored conversations for a specific word or phrase (supports Swedish characters).
+
+**List all loaded scenarios:**
+```bash
+python db_inspector.py --list
+```
+Shows the names and database file paths of all currently active scenarios. Handy for confirming everything loaded correctly.
 
 ## Testing
 
