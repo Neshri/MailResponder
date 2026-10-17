@@ -112,7 +112,7 @@ pip install -r requirements.txt
 
 This bot requires access to a mailbox via the Microsoft Graph API. This is the most critical part of the setup.
 
-1.  Go to the [Azure Portal](https://portal.azure.com/) and navigate to **Azure Active Directory** > **App registrations**.
+1.  Go to the [Azure Portal](https://portal.azure.com/) and navigate to **Microsoft Entra ID** > **App registrations**.
 2.  Click **New registration**.
 3.  Give it a name (e.g., "UllaSupportBot").
 4.  Under "Supported account types," select "Accounts in this organizational directory only."
@@ -134,10 +134,10 @@ This bot requires access to a mailbox via the Microsoft Graph API. This is the m
 
 ### Step 5: Configure Scenario Environment Variables
 
-The system supports per-scenario configuration. For each scenario you wish to activate (e.g., `scenarios/example_scenario/`):
+All configuration is **per-scenario**. Each scenario folder under `scenarios/` gets its own `.env` file with the credentials for that scenario's target mailbox. There is no global `.env` — the `example.env` in the repository root is a reference template only.
 
-1.  Create a file named `.env` **inside the specific scenario directory**.
-2.  Copy the following template and fill it out with credentials matching that scenario's target mailbox.
+1.  Create a file named `.env` **inside the specific scenario directory** (e.g. `scenarios/ulla_support/.env`).
+2.  Copy the contents of `example.env` from the repository root and fill in the credentials matching that scenario's mailbox.
 
 ```dotenv
 # --- Azure AD App Registration Credentials ---
@@ -151,10 +151,13 @@ BOT_EMAIL_ADDRESS="persona.name@yourdomain.com"
 # --- LLM Model Configuration ---
 PERSONA_MODEL="gemma3:12b-it-qat"
 EVAL_MODEL="gemma3:12b-it-qat"
+
+# --- Optional: Specify Ollama host if not running on localhost ---
+# OLLAMA_HOST="http://192.168.1.100:11434"
 ```
 
 > [!NOTE]
-> Values in the scenario's `.env` or `config.json` will override any global environment variables.
+> Each scenario's `.env` or `config.json` values take precedence over any system-level environment variables. Models and the Ollama host URL can differ between scenarios.
 
 ## Usage
 
@@ -234,7 +237,9 @@ The suite covers:
 ├── config.py                 # Config: Central environment management
 ├── llm_client.py             # Client: Ollama API integration wrapper
 ├── scenarios/                # Directory containing specific training scenarios
-│   └── example_scenario/     # A self-contained scenario folder
+│   ├── ulla_support/         # Classic tech support simulation (Ulla persona)
+│   ├── arga_alex/            # Anger de-escalation simulation (Alex persona)
+│   └── bengt_support/        # Precision guidance simulation (Bengt persona)
 │       ├── config.json       # Scenario metadata, email, and model selection
 │       ├── problems.json     # Catalog of problems, start phrases, and solution keys
 │       ├── persona_prompt.txt # System prompt defining the persona's character
@@ -244,7 +249,7 @@ The suite covers:
 ├── tests/                    # Comprehensive test suite and verification scripts
 │   └── run_all.py            # Central test runner
 ├── requirements.txt          # Python dependencies
-└── example.env               # Global environment configuration template (root)
+└── example.env               # Template for per-scenario .env files
 ```
 
 ## Configuration and Extension
@@ -257,13 +262,17 @@ Define the scenario's behavior, target mailbox, and specific LLM models:
 {
   "scenario_name": "Technical Support",
   "persona_name": "Kim",
+  "description": "A short description of this scenario.",
   "db_prefix": "tech_support",
-  "target_email": "kim.support@domain.com",
+  "target_email_env_var": "BOT_EMAIL_ADDRESS",
   "persona_model": "gemma3:12b",
   "eval_model": "gemma3:12b",
   "image_warning_message": "Kim confirms they cannot see images."
 }
 ```
+
+> [!NOTE]
+> Use `target_email_env_var` to read the mailbox address from the scenario's `.env` file (recommended). Alternatively, you can hardcode the address directly with `"target_email": "kim.support@domain.com"`. Set `"enabled": false` to temporarily disable a scenario without removing its folder.
 
 ### 2. Define Problems (`problems.json`)
 Structure your training into levels. Each level is unlocked when a problem from the previous level is solved:
@@ -275,8 +284,16 @@ Structure your training into levels. Each level is unlocked when a problem from 
 - **`evaluator_prompt.txt`**: Define the criteria for a "solved" problem. The evaluator should output `[LÖST]` when the student provides the correct solution.
 
 ### 4. Advanced: Custom Logic (Handlers)
-For scenarios requiring complex state tracking (like "Arga Alex"), you can implement a custom handler in `scenario_handlers.py`. The system calls these hooks at specific points:
-- `on_start_problem`: Initialize scenario-specific state (e.g., set anger to 100).
-- `is_problem_solved`: Override the solver verdict based on state (e.g., reject if anger > 10).
-- `check_failure_state`: Terminate the session if failure conditions are met (e.g., anger reaches 200).
-- `modify_persona_context`: Inject state information into the AI's prompt.
+For scenarios requiring complex state tracking, you can implement a custom handler in `scenario_handlers.py` by subclassing `BaseScenarioHandler` and registering it in `HANDLER_REGISTRY`. The system calls these hooks at specific points in the email lifecycle:
+- `on_start_problem`: Initialize scenario-specific state.
+- `modify_start_email_body`: Modify the opening email sent to the student.
+- `get_eval_history_context`: Control how much conversation history the evaluator sees.
+- `on_evaluator_result`: React to the evaluator's verdict (e.g., adjust a state counter).
+- `is_problem_solved`: Override the solver verdict based on custom state (e.g., reject if anger > 10).
+- `check_failure_state`: Terminate the session if failure conditions are met.
+- `modify_persona_context`: Inject state information into the persona AI's prompt.
+- `modify_persona_reply`: Post-process the persona's reply before sending (e.g., append a status tag).
+
+Two handlers ship with the project:
+- **`ArgaAlexHandler`**: Tracks an anger level (0–200). Anger rises and falls based on the evaluator's score adjustment. The problem is only considered solved when anger has dropped below 10, and the session fails if anger reaches 200.
+- **`BengtHandler`**: Tracks a stress level that rises passively every turn regardless of student performance. The student must give Bengt clear enough instructions to "reveal" the target value (a weighted probability roll that worsens as stress increases), and the session fails if stress exceeds the threshold.
