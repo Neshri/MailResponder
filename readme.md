@@ -256,23 +256,6 @@ python db_inspector.py --list
 ```
 Shows the names and database file paths of all currently active scenarios. Handy for confirming everything loaded correctly.
 
-## Testing
-
-MailResponder includes a comprehensive, isolated test suite that runs without requiring an internet connection or live LLM access (via extensive mocking).
-
-### Running Tests
-To run all unit tests and verification scripts, use the central test runner:
-
-```bash
-python tests/run_all.py
-```
-
-The suite covers:
-- **Core Simulation**: Integration of email processing and LLM orchestration.
-- **Scenario Logic**: Testing state tracking and fail states (e.g., Arga Alex).
-- **Database**: Stability of student progress and history persistence.
-- **Email Parsing**: Reliability of reply detection and HTML cleaning.
-- **Verification**: Idempotency and prompt structure integrity.
 
 ## Project Structure
 
@@ -301,8 +284,6 @@ The suite covers:
 │       ├── evaluator_prompt.txt # System prompt defining evaluation rules
 │       ├── .env              # Scenario-specific secrets (M365 credentials, etc.)
 │       └── [prefix]_conversations.db # Auto-generated databases for this scenario
-├── tests/                    # Comprehensive test suite and verification scripts
-│   └── run_all.py            # Central test runner
 ├── requirements.txt          # Python dependencies
 └── example.env               # Template for per-scenario .env files
 ```
